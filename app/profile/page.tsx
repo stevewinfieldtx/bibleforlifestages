@@ -12,6 +12,9 @@ interface ProfileData {
   ageRange: string
   gender: string
   stageSituation: string
+  diveDeeper: {
+    autismFamily: boolean
+  }
 }
 
 export default function ProfilePage() {
@@ -24,6 +27,9 @@ export default function ProfilePage() {
     ageRange: "",
     gender: "",
     stageSituation: "Nothing special",
+    diveDeeper: {
+      autismFamily: false,
+    },
   })
   const [originalProfile, setOriginalProfile] = useState<string>("")
 
@@ -38,6 +44,9 @@ export default function ProfilePage() {
         ageRange: parsed.ageRange || "",
         gender: parsed.gender || "",
         stageSituation: parsed.stageSituation || parsed.season || "Nothing special",
+        diveDeeper: {
+          autismFamily: parsed.diveDeeper?.autismFamily || false,
+        },
       })
       const profileKey = `${parsed.ageRange || ""}_${parsed.gender || ""}_${parsed.stageSituation || parsed.season || "Nothing special"}`
       setOriginalProfile(profileKey)
@@ -54,8 +63,19 @@ export default function ProfilePage() {
     localStorage.setItem("userProfile", JSON.stringify(updated))
   }
 
+  const handleDiveDeeperChange = (option: string, value: boolean) => {
+    const updated = {
+      ...formData,
+      diveDeeper: {
+        ...formData.diveDeeper,
+        [option]: value,
+      },
+    }
+    setFormData(updated)
+    localStorage.setItem("userProfile", JSON.stringify(updated))
+  }
+
   const handleSave = () => {
-    // Just save and navigate, the devotional context will use the new profile for cache key lookup
     router.push("/")
   }
 
@@ -183,6 +203,42 @@ export default function ProfilePage() {
               </div>
             </div>
           </label>
+        </div>
+
+        {/* Dive Deeper Options */}
+        <div className="pt-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="material-symbols-outlined text-primary">explore</span>
+            <h3 className="text-lg font-bold leading-tight">Dive Deeper Options</h3>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">Enable additional reflection options that appear when studying scripture.</p>
+          
+          <div className="flex flex-col gap-3">
+            <label className="flex items-center gap-3 p-4 rounded-xl border border-border bg-card cursor-pointer hover:border-primary/50 transition-all">
+              <input
+                type="checkbox"
+                checked={formData.diveDeeper.autismFamily}
+                onChange={(e) => handleDiveDeeperChange("autismFamily", e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className={`size-10 rounded-full flex items-center justify-center transition-all ${formData.diveDeeper.autismFamily ? "bg-gradient-to-br from-blue-500 to-purple-500 text-white" : "bg-muted text-muted-foreground"}`}>
+                <span className="material-symbols-outlined">family_restroom</span>
+              </div>
+              <div className="flex-1">
+                <span className={`font-semibold block ${formData.diveDeeper.autismFamily ? "text-primary" : "text-foreground"}`}>
+                  Autism Family Support
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  Reflections for families with autistic loved ones
+                </span>
+              </div>
+              <div className={`size-6 rounded-full border-2 flex items-center justify-center transition-all ${formData.diveDeeper.autismFamily ? "border-primary bg-primary" : "border-border"}`}>
+                {formData.diveDeeper.autismFamily && (
+                  <span className="material-symbols-outlined text-white text-sm">check</span>
+                )}
+              </div>
+            </label>
+          </div>
         </div>
 
         {canAccessPremium && (

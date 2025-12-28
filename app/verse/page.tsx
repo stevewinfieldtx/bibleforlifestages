@@ -9,10 +9,12 @@ import { UpgradePrompt } from "@/components/upgrade-prompt"
 
 export default function VerseInterpretationPage() {
   const router = useRouter()
-  const { devotional, loadingStates } = useDevotional()
+  const { devotional, loadingStates, isLoading } = useDevotional()
   const { canAccessPremium } = useSubscription()
   const [showHeaderTitle, setShowHeaderTitle] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
+  const [hasWaited, setHasWaited] = useState(false)
+  const [showAutismSupport, setShowAutismSupport] = useState(false)
   const mainRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -28,19 +30,47 @@ export default function VerseInterpretationPage() {
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
 
+  // Check if autism support is enabled in profile
   useEffect(() => {
-    if (!devotional.verse?.reference) {
+    try {
+      const savedProfile = localStorage.getItem("userProfile")
+      if (savedProfile) {
+        const parsed = JSON.parse(savedProfile)
+        setShowAutismSupport(parsed.diveDeeper?.autismFamily || false)
+      }
+    } catch (e) { /* ignore */ }
+  }, [])
+
+  // Wait 5 seconds before allowing redirect - gives time for verse to load
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setHasWaited(true)
+    }, 5000)
+    return () => clearTimeout(timer)
+  }, [])
+
+  // Only redirect if we've waited AND there's no verse AND we're not loading
+  useEffect(() => {
+    if (hasWaited && !devotional.verse?.reference && !isLoading) {
+      console.log("[v0] Verse page - No verse after timeout and not loading, redirecting to home")
       router.push("/")
     }
-  }, [devotional, router])
+  }, [hasWaited, devotional.verse?.reference, isLoading, router])
 
   useEffect(() => {
-    console.log("[v0] Verse page - devotional.interpretation:", devotional.interpretation)
-    console.log("[v0] Verse page - loadingStates.interpretation:", loadingStates?.interpretation)
-  }, [devotional.interpretation, loadingStates?.interpretation])
+    console.log("[v0] Verse page - devotional.verse:", devotional.verse?.reference)
+    console.log("[v0] Verse page - devotional.interpretation:", devotional.interpretation?.substring(0, 50))
+    console.log("[v0] Verse page - isLoading:", isLoading)
+  }, [devotional.verse, devotional.interpretation, isLoading])
 
+  // Show loading state while waiting for verse
   if (!devotional.verse) {
-    return null
+    return (
+      <div className="flex min-h-screen w-full flex-col items-center justify-center max-w-md mx-auto bg-gradient-to-b from-orange-50 via-background to-background shadow-2xl">
+        <div className="size-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-muted-foreground">Loading scripture...</p>
+      </div>
+    )
   }
 
   const verseText = devotional.verse.text?.startsWith('"') ? devotional.verse.text : `"${devotional.verse.text}"`
@@ -48,8 +78,6 @@ export default function VerseInterpretationPage() {
   const interpretationParagraphs = devotional.interpretation
     ? devotional.interpretation.split(/\n\n+/).filter((p) => p.trim().length > 0)
     : []
-
-  console.log("[v0] Verse page - interpretationParagraphs:", interpretationParagraphs)
 
   const deepenItems = [
     {
@@ -102,17 +130,33 @@ export default function VerseInterpretationPage() {
       text: "text-rose-700",
       premium: true,
     },
-    {
-      label: "Let's Talk",
-      sub: "Chat about it",
-      icon: "forum",
-      path: "/talk",
-      color: "from-indigo-500 to-violet-500",
-      bg: "bg-indigo-100",
-      text: "text-indigo-700",
-      premium: true, // Changed from false to true to lock behind paywall
-    },
   ]
+
+  // Add autism support button in 6th position if enabled
+  if (showAutismSupport) {
+    deepenItems.push({
+      label: "Deep Dive",
+      sub: "Autism family support",
+      icon: "family_restroom",
+      path: "/autism-support",
+      color: "from-blue-600 to-purple-600",
+      bg: "bg-blue-100",
+      text: "text-blue-700",
+      premium: true,
+    })
+  }
+
+  // Let's Talk always goes last (full width)
+  deepenItems.push({
+    label: "Let's Talk",
+    sub: "Chat about it",
+    icon: "forum",
+    path: "/talk",
+    color: "from-indigo-500 to-violet-500",
+    bg: "bg-indigo-100",
+    text: "text-indigo-700",
+    premium: true,
+  })
 
   const heroImageUrl = devotional.heroImage || "/spiritual-peaceful-landscape-golden-hour.jpg"
   const isInterpretationLoading = loadingStates?.interpretation
@@ -245,22 +289,26 @@ export default function VerseInterpretationPage() {
           <div className="grid grid-cols-2 gap-3">
             {deepenItems.map((item, idx) => {
               const isLocked = item.premium && !canAccessPremium
+              const isLastItem = idx === deepenItems.length - 1
+              const isLetsTalk = item.label === "Let's Talk"
               return (
                 <button
                   key={idx}
                   onClick={() => !isLocked && router.push(item.path)}
                   disabled={isLocked}
-                  className={`group flex flex-col items-start p-4 bg-card rounded-xl border border-border shadow-sm transition-all ${
+                  className={`group flex ${isLetsTalk ? "flex-row items-center col-span-2" : "flex-col items-start"} p-4 bg-card rounded-xl border border-border shadow-sm transition-all ${
                     isLocked ? "opacity-50 cursor-not-allowed" : "active:scale-[0.98] hover:shadow-md"
                   }`}
                 >
                   <div
-                    className={`size-10 rounded-full bg-gradient-to-br ${item.color} text-white flex items-center justify-center mb-3 relative`}
+                    className={`size-10 rounded-full bg-gradient-to-br ${item.color} text-white flex items-center justify-center ${isLetsTalk ? "mr-4" : "mb-3"} relative`}
                   >
                     <span className="material-symbols-outlined">{isLocked ? "lock" : item.icon}</span>
                   </div>
-                  <span className="font-bold">{item.label}</span>
-                  <span className={`text-xs ${item.text} mt-1 text-left font-medium`}>{item.sub}</span>
+                  <div className={isLetsTalk ? "flex-1" : ""}>
+                    <span className="font-bold block">{item.label}</span>
+                    <span className={`text-xs ${item.text} mt-1 text-left font-medium`}>{item.sub}</span>
+                  </div>
                 </button>
               )
             })}
