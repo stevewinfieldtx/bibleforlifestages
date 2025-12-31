@@ -1,101 +1,89 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { generateText } from "ai"
-import { buildPersonalizationContext } from "@/lib/personalization-prompts"
 
 export async function POST(request: Request) {
   try {
-    const { verseReference, verseText, ageRange, gender, stageSituation, storyType } = await request.json()
+    const { verseReference, verseText, ageRange, stageSituation, storyType } = await request.json()
 
     if (!verseReference || !verseText || !storyType) {
-      console.error("[v0] Story API - Missing required fields:", { verseReference, verseText, storyType })
-      return Response.json(
-        {
-          error: "Missing required fields",
-          title: "Story Unavailable",
-          text: "Unable to generate story due to missing information.",
-          imagePrompt: "A peaceful scene",
-        },
-        { status: 400 },
-      )
+      return Response.json({
+        title: "Story Unavailable",
+        text: "Unable to generate story.",
+        imagePrompt: "A peaceful scene",
+      }, { status: 400 })
     }
 
     const openrouter = createOpenRouter({
       apiKey: process.env.OPENROUTER_API_KEY!,
     })
 
-    const modelId = (process.env.OPENROUTER_MODEL_ID || "anthropic/claude-sonnet-4-20250514").trim()
+    const modelId = (process.env.OPENROUTER_MODEL_ID || "google/gemini-2.0-flash-001").trim()
 
-    const personalization = buildPersonalizationContext(ageRange, gender, stageSituation)
+    const settingPrompt = storyType === "contemporary" 
+      ? "Set in the present day (2024). Real people in real situations - not sanitized Christian fiction. Include messy emotions, imperfect characters, genuine struggle. The verse's truth should emerge through the story, not be preached at the end."
+      : "Set in a different time period or culture - could be ancient, medieval, another country, a historical moment. Show how this truth has echoed through human experience across time. Rich historical or cultural details."
 
-    // Different prompts for each story type
-    const storyPrompts: Record<string, string> = {
-      contemporary: `Write a modern-day story set in TODAY's world (2024) that brings this verse to life. 
-        Use current technology, modern settings (coffee shops, offices, hospitals, homes), and relatable situations.
-        Focus on everyday people facing real challenges - work stress, family issues, health concerns, relationship struggles.
-        Make it feel like something that could happen to your neighbor or coworker.`,
-
-      historical: `Write a story set in a DIFFERENT time period or culture that brings this verse to life.
-        Could be biblical times, medieval period, another country, or a unique cultural context.
-        Show how the timeless truth of this verse transcends time and culture.
-        Make the setting vivid and immersive while keeping the message universal.`,
+    const ageContext: Record<string, string> = {
+      teens: "Characters and situations relatable to teenagers - school, friendships, family conflict, social pressure, identity.",
+      university: "Characters navigating early adulthood - career uncertainty, relationships, independence, finding their way.",
+      adult: "Characters facing adult realities - work stress, marriage challenges, parenting, financial pressure, aging parents.",
+      senior: "Characters with life experience - legacy questions, health challenges, loss, wisdom gained through decades.",
     }
 
-    const storyPrompt = storyPrompts[storyType] || storyPrompts.contemporary
-
-    const systemInstruction = `You're an amazing storyteller who makes people feel things. Write stories that feel real and relatable - the kind of stories friends share with each other. Use natural dialogue, real emotions, and situations people actually face.${personalization}`
+    const situationHint = stageSituation && stageSituation !== "Nothing special" && stageSituation !== "General"
+      ? `Weave in themes of: ${stageSituation}. Don't make it the whole story, but let it inform the emotional undercurrent.`
+      : ""
 
     const { text } = await generateText({
       model: openrouter(modelId),
-      system: systemInstruction,
-      prompt: `Create ONE powerful story that brings ${verseReference}: "${verseText}" to life.
+      system: `You're a literary fiction writer who happens to love scripture. You write stories that move people - not Christian propaganda, but real human stories where faith is one thread in the tapestry.
 
-${storyPrompt}
+${settingPrompt}
 
-IMPORTANT LENGTH REQUIREMENT: The story MUST be at least 500 words. Include:
-- Detailed scene setting and atmosphere
-- Multiple characters with distinct voices  
-- Extended dialogue exchanges
-- Internal thoughts and emotions of the main character
-- A clear narrative arc with setup, conflict, and resolution
-- Sensory details that bring the story to life
+${ageContext[ageRange] || ageContext.adult}
 
-Format your response EXACTLY like this (use === as delimiters):
-TITLE===Your Story Title Here===TITLE
-STORY===Your full story text here (minimum 500 words)...===STORY
-IMAGE===A warm, cinematic scene description for an image===IMAGE`,
-      maxTokens: 4000,
+${situationHint}
+
+CRAFT REQUIREMENTS:
+- 500-600 words
+- Show, don't tell. No moralizing.
+- Real dialogue that sounds like actual people talking
+- Emotional authenticity - let characters be messy, conflicted, human
+- A genuine story arc with tension and resolution
+- The verse's truth should be FELT, not explained
+- End with resonance, not a sermon
+- Literary quality - this should be genuinely good writing`,
+      prompt: `Write a story that brings ${verseReference} to life: "${verseText}"
+
+TITLE===
+[A literary, evocative title - not cheesy]
+===TITLE
+
+STORY===
+[Your 500-600 word story]
+===STORY
+
+IMAGE===
+[Cinematic scene from the story - specific moment, emotional, 25 words]
+===IMAGE`,
+      maxTokens: 1800,
     })
 
-    const titleMatch = text.match(/TITLE===(.+?)===TITLE/s)
-    const storyMatch = text.match(/STORY===(.+?)===STORY/s)
-    const imageMatch = text.match(/IMAGE===(.+?)===IMAGE/s)
-
-    const title = titleMatch?.[1]?.trim() || "A Story of Faith"
-    const storyText =
-      storyMatch?.[1]?.trim() ||
-      text
-        .replace(/TITLE===.+?===TITLE/s, "")
-        .replace(/IMAGE===.+?===IMAGE/s, "")
-        .trim()
-    const imagePrompt = imageMatch?.[1]?.trim() || `A warm scene depicting ${verseReference}`
-
-    console.log("[v0] Story generated successfully:", { title, textLength: storyText.length, storyType })
+    const titleMatch = text.match(/TITLE===\s*(.+?)\s*===TITLE/s)
+    const storyMatch = text.match(/STORY===\s*(.+?)\s*===STORY/s)
+    const imageMatch = text.match(/IMAGE===\s*(.+?)\s*===IMAGE/s)
 
     return Response.json({
-      title,
-      text: storyText,
-      imagePrompt,
+      title: titleMatch?.[1]?.trim() || "A Story of Faith",
+      text: storyMatch?.[1]?.trim() || text.replace(/TITLE===.+?===TITLE/s, "").replace(/IMAGE===.+?===IMAGE/s, "").trim(),
+      imagePrompt: imageMatch?.[1]?.trim() || `Emotional scene depicting themes from ${verseReference}`,
     })
   } catch (error) {
-    console.error("Story generation error:", error instanceof Error ? error.message : error)
-    return Response.json(
-      {
-        title: "Story Unavailable",
-        text: "We encountered an issue generating this story. Please try again later.",
-        imagePrompt: "A peaceful, contemplative scene",
-        error: error instanceof Error ? error.message : "Failed to generate story",
-      },
-      { status: 200 },
-    ) // Return 200 so client doesn't fail, but include error field
+    console.error("Story error:", error)
+    return Response.json({
+      title: "Story Unavailable",
+      text: "Please try again later.",
+      imagePrompt: "A peaceful scene",
+    }, { status: 200 })
   }
 }

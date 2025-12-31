@@ -11,10 +11,11 @@ import { BottomNav } from "@/components/bottom-nav"
 
 export default function LandingPage() {
   const router = useRouter()
-  const { userName, isLoading, loadingStep, generateDevotional } = useDevotional()
+  const { userName, isLoading, loadingStep, generateDevotional, isContentReady } = useDevotional()
   const { canSearchCustomVerse, isTrialActive, daysLeftInTrial } = useSubscription()
   const { t } = useLanguage()
   const [currentProfile, setCurrentProfile] = useState({ ageRange: "", gender: "", stageSituation: "" })
+  const [waitingForContent, setWaitingForContent] = useState(false)
 
   useEffect(() => {
     const loadProfile = () => {
@@ -39,11 +40,18 @@ export default function LandingPage() {
     return () => window.removeEventListener("focus", loadProfile)
   }, [])
 
-  const handleGenerateDevotional = async (source: string) => {
-    await generateDevotional(source)
-    setTimeout(() => {
+  // Navigate to verse page once content is ready
+  useEffect(() => {
+    if (waitingForContent && isContentReady) {
+      setWaitingForContent(false)
       router.push("/verse")
-    }, 100)
+    }
+  }, [waitingForContent, isContentReady, router])
+
+  const handleGenerateDevotional = async (source: string) => {
+    setWaitingForContent(true)
+    await generateDevotional(source)
+    // Navigation will happen via the useEffect above when isContentReady becomes true
   }
 
   const getProfileLabel = () => {
@@ -74,11 +82,37 @@ export default function LandingPage() {
         <LanguageSelector variant="compact" />
       </div>
 
-      {isLoading && (
+      {/* Loading Overlay - stays until content is ready */}
+      {(isLoading || waitingForContent) && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#0c1929]/95 backdrop-blur-sm text-white p-6 text-center">
-          <div className="size-16 border-4 border-amber-400 border-t-transparent rounded-full animate-spin mb-4"></div>
-          <h2 className="text-xl font-bold mb-2 text-amber-100">{t("generating")}</h2>
-          <p className="text-sm text-blue-200 animate-pulse">{loadingStep}</p>
+          {/* Animated rings */}
+          <div className="relative size-24 mb-6">
+            <div className="absolute inset-0 border-4 border-amber-400/30 rounded-full animate-ping"></div>
+            <div className="absolute inset-2 border-4 border-amber-400/50 rounded-full animate-pulse"></div>
+            <div className="absolute inset-4 border-4 border-amber-400 border-t-transparent rounded-full animate-spin"></div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="material-symbols-outlined text-3xl text-amber-400">auto_awesome</span>
+            </div>
+          </div>
+          
+          <h2 className="text-xl font-bold mb-3 text-amber-100">Creating Your Devotional</h2>
+          
+          <p className="text-sm text-blue-200 animate-pulse max-w-xs mb-4">
+            {loadingStep}
+          </p>
+          
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 max-w-xs border border-amber-400/20">
+            <p className="text-xs text-blue-100/80 leading-relaxed">
+              We&apos;re generating <span className="text-amber-200 font-semibold">truly original content</span> personalized just for you—not templates. This takes a few moments, but the wait is worth it.
+            </p>
+          </div>
+          
+          {/* Progress dots */}
+          <div className="flex gap-2 mt-6">
+            <span className="w-2 h-2 bg-amber-400 rounded-full animate-bounce"></span>
+            <span className="w-2 h-2 bg-amber-400 rounded-full animate-bounce [animation-delay:150ms]"></span>
+            <span className="w-2 h-2 bg-amber-400 rounded-full animate-bounce [animation-delay:300ms]"></span>
+          </div>
         </div>
       )}
 
@@ -118,7 +152,7 @@ export default function LandingPage() {
           <div className="flex flex-col gap-4">
             <button
               onClick={() => (canSearchCustomVerse ? router.push("/selection") : null)}
-              disabled={!canSearchCustomVerse}
+              disabled={!canSearchCustomVerse || isLoading || waitingForContent}
               className={`flex w-full items-center justify-center gap-2 rounded-xl py-4 text-base font-bold text-white shadow-lg transition active:scale-[0.98] ${
                 canSearchCustomVerse
                   ? "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 shadow-amber-900/30"
@@ -135,7 +169,7 @@ export default function LandingPage() {
               <div className="grid grid-cols-3 gap-3">
                 <button
                   onClick={() => handleGenerateDevotional("YouVersion")}
-                  disabled={isLoading}
+                  disabled={isLoading || waitingForContent}
                   className="flex flex-col items-center justify-center gap-2 rounded-xl bg-white/10 backdrop-blur-sm p-3 text-white transition hover:bg-white/20 active:scale-95 cursor-pointer disabled:opacity-50 border border-white/10"
                 >
                   <div className="w-12 h-12 rounded-lg overflow-hidden shadow-lg">
@@ -151,7 +185,7 @@ export default function LandingPage() {
                 </button>
                 <button
                   onClick={() => handleGenerateDevotional("Gateway")}
-                  disabled={isLoading}
+                  disabled={isLoading || waitingForContent}
                   className="flex flex-col items-center justify-center gap-2 rounded-xl bg-white/10 backdrop-blur-sm p-3 text-white transition hover:bg-white/20 active:scale-95 cursor-pointer disabled:opacity-50 border border-white/10"
                 >
                   <div className="w-12 h-12 rounded-full overflow-hidden shadow-lg">
@@ -167,7 +201,7 @@ export default function LandingPage() {
                 </button>
                 <button
                   onClick={() => handleGenerateDevotional("Olive Tree")}
-                  disabled={isLoading}
+                  disabled={isLoading || waitingForContent}
                   className="flex flex-col items-center justify-center gap-2 rounded-xl bg-white/10 backdrop-blur-sm p-3 text-white transition hover:bg-white/20 active:scale-95 cursor-pointer disabled:opacity-50 border border-white/10"
                 >
                   <div className="w-12 h-12 rounded-full overflow-hidden shadow-lg">

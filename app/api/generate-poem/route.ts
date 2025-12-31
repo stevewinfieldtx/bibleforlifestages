@@ -1,63 +1,75 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { generateText } from "ai"
-import { buildPersonalizationContext } from "@/lib/personalization-prompts"
 
 export async function POST(request: Request) {
   try {
-    const { verseReference, verseText, ageRange, gender, stageSituation, poemType } = await request.json()
+    const { verseReference, verseText, poemType } = await request.json()
 
     const openrouter = createOpenRouter({
       apiKey: process.env.OPENROUTER_API_KEY!,
     })
 
-    const modelId = (process.env.OPENROUTER_MODEL_ID || "anthropic/claude-sonnet-4-20250514").trim()
-    const personalization = buildPersonalizationContext(ageRange, gender, stageSituation)
+    const modelId = (process.env.OPENROUTER_MODEL_ID || "google/gemini-2.0-flash-001").trim()
 
     const isClassic = poemType === "classic"
-    const styleGuide = isClassic
-      ? "Write a SONNET or HYMN STYLE poem with rhyme, meter, and traditional structure."
-      : "Write a FREE VERSE poem with vivid imagery, no strict rhyme required."
+    
+    const stylePrompt = isClassic 
+      ? `Write a formal poem in the tradition of George Herbert, John Donne, or Gerard Manley Hopkins. 
+Use rhyme and meter deliberately. Could be a sonnet, hymn-like verses, or structured stanzas.
+12-20 lines. Each line crafted, every word earning its place.
+This should feel timeless - something that could appear in an anthology of religious verse.`
+      : `Write contemporary free verse in the tradition of Mary Oliver, Wendell Berry, or Scott Cairns.
+No forced rhyme. Let the line breaks do work. Vivid, concrete imagery.
+12-20 lines. Spare but resonant.
+This should feel like real poetry, not greeting card sentiment.`
 
     const { text } = await generateText({
       model: openrouter(modelId),
-      system: `You are a gifted poet who writes beautiful, emotionally resonant poetry. Your poems have proper structure with line breaks, stanzas, and poetic rhythm. Write in a warm, accessible style that touches the heart.${personalization}`,
-      prompt: `Generate 1 beautiful ${isClassic ? "CLASSIC (Sonnet/Hymn)" : "FREE VERSE"} poem inspired by ${verseReference}: "${verseText}"
+      system: `You are a poet - not a Christian content creator, but an actual poet who takes craft seriously. 
 
-${styleGuide}
+${stylePrompt}
 
-Requirements:
-- 8-16 lines total
-- Include clear stanzas with blank lines between them
-- Use poetic devices like imagery and metaphor
+NEVER:
+- Rhyme just for the sake of rhyming
+- Use clichés like "amazing grace" or "precious Lord" unless genuinely earned
+- Write greeting card sentiment
+- Sacrifice meaning for meter
 
-Respond in this EXACT format:
-TITLE===Your Poem Title===TITLE
+ALWAYS:
+- Every image concrete and specific
+- Emotional truth, not religious platitudes  
+- Let the verse inspire, but write YOUR poem
+- Quality over length`,
+      prompt: `Write a poem inspired by ${verseReference}: "${verseText}"
+
+TITLE===
+[Evocative title - not just the verse reference]
+===TITLE
+
 POEM===
-First line of poem
-Second line of poem
-
-Third line (new stanza)
-Fourth line
+[Your 12-20 line poem with intentional stanza breaks]
 ===POEM
-IMAGE===A visual description for artwork to accompany this poem===IMAGE`,
-      maxTokens: 1000,
+
+IMAGE===
+[Artistic, painterly scene that captures the poem's mood - 25 words]
+===IMAGE`,
+      maxTokens: 800,
     })
 
-    // Parse the response
-    const titleMatch = text.match(/TITLE===(.+?)===TITLE/s)
-    const poemMatch = text.match(/POEM===(.+?)===POEM/s)
-    const imageMatch = text.match(/IMAGE===(.+?)===IMAGE/s)
+    const titleMatch = text.match(/TITLE===\s*(.+?)\s*===TITLE/s)
+    const poemMatch = text.match(/POEM===\s*(.+?)\s*===POEM/s)
+    const imageMatch = text.match(/IMAGE===\s*(.+?)\s*===IMAGE/s)
 
-    const poem = {
-      title: titleMatch?.[1]?.trim() || "Untitled Poem",
-      type: isClassic ? "Classic Verse" : "Free Verse",
-      text: poemMatch?.[1]?.trim() || text,
-      imagePrompt: imageMatch?.[1]?.trim() || "Abstract artistic representation of faith and spiritual contemplation",
-    }
-
-    return Response.json({ poem })
+    return Response.json({
+      poem: {
+        title: titleMatch?.[1]?.trim() || "Untitled Poem",
+        type: isClassic ? "Classic Verse" : "Free Verse",
+        text: poemMatch?.[1]?.trim() || text,
+        imagePrompt: imageMatch?.[1]?.trim() || "Abstract spiritual contemplation in warm light",
+      }
+    })
   } catch (error) {
-    console.error("Poem generation error:", error)
+    console.error("Poem error:", error)
     return Response.json({ error: "Failed to generate poem" }, { status: 500 })
   }
 }

@@ -1,132 +1,134 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { generateText } from "ai"
-import { buildPersonalizationContext } from "@/lib/personalization-prompts"
 
 export async function POST(request: Request) {
   try {
-    const { verseReference, verseText, ageRange, gender, stageSituation, language = "en" } = await request.json()
+    const { verseReference, verseText, ageRange, language = "en" } = await request.json()
 
     const openrouter = createOpenRouter({
       apiKey: process.env.OPENROUTER_API_KEY!,
     })
 
-    const modelId = (process.env.OPENROUTER_MODEL_ID || "anthropic/claude-sonnet-4-20250514").trim()
+    const modelId = (process.env.OPENROUTER_MODEL_ID || "google/gemini-2.0-flash-001").trim()
 
-    const musicStyle = getMusicStyleForAge(ageRange)
-    const personalization = buildPersonalizationContext(ageRange, gender, stageSituation)
+    const styleGuide: Record<string, string> = {
+      teens: `Target: Current Billboard Hot 100 sound
+Style: High-energy pop, synth-pop, or pop-punk
+Tempo: 120+ BPM, energetic
+Influences: Olivia Rodrigo, Billie Eilish, Twenty One Pilots
+Lyrics: Raw emotion, identity struggles, authentic doubt and hope`,
+      university: `Target: Indie-pop crossover appeal  
+Style: Indie-pop with R&B influences, atmospheric
+Tempo: 90-110 BPM, introspective but building
+Influences: FINNEAS, Hozier, Phoebe Bridgers
+Lyrics: Vulnerable, questioning, poetic imagery`,
+      adult: `Target: Anthemic crossover appeal
+Style: Pop-rock, stadium-ready, emotional builds
+Tempo: 100-120 BPM, powerful
+Influences: Coldplay, OneRepublic, Imagine Dragons
+Lyrics: Universal struggles, hope in darkness, resilience`,
+      senior: `Target: Adult contemporary, timeless
+Style: Warm acoustic-pop, piano-driven, melodic
+Tempo: 70-90 BPM, reflective
+Influences: James Taylor, Sara Bareilles, acoustic worship
+Lyrics: Wisdom, gratitude, peace in the journey`,
+    }
 
-    const languageInstruction =
-      language !== "en"
-        ? `\n\nIMPORTANT: Write the song lyrics in ${getLanguageName(language)}. The structure labels ([Verse 1], [Chorus], etc.) should remain in English, but all lyrical content must be in ${getLanguageName(language)}.`
-        : ""
-
-    const systemInstruction = `You're a contemporary songwriter who writes songs that sound like mainstream pop hits with spiritual themes.
-
-CRITICAL RULES:
-- NO hymn-style language (avoid "thee", "thou", "thy", "hath", "unto", "doth", "behold")
-- NO churchy clichés or overt religious terminology that wouldn't connect with mainstream listeners
-- Use everyday language that real people actually speak
-- Make it emotionally authentic, vulnerable, and relatable
-- Think Billboard Top 40 meets faith - catchy hooks, memorable melodies
-- Production style inspired by modern pop/rock bands, NOT traditional worship artists
-
-${musicStyle}${personalization}${languageInstruction}`
+    const style = styleGuide[ageRange] || styleGuide.adult
+    const langNote = language !== "en" ? ` Write lyrics in ${getLanguageName(language)}.` : ""
 
     const { text } = await generateText({
       model: openrouter(modelId),
-      system: systemInstruction,
-      prompt: `Write an uplifting contemporary song inspired by ${verseReference}: "${verseText}"
+      system: `You're a professional songwriter writing for mainstream artists. Your songs get radio play - they're catchy, emotional, and well-crafted.
 
-Create a song with:
-- Verse-chorus structure with a clear hook and bridge
-- Modern pop production with electronic elements and live instruments
-- Lyrics focused on the scripture's theme using everyday language, not churchy terminology
-- Natural conversational phrasing that flows like normal speech
-- Emotional build throughout with dynamic shifts between sections
-- 80-110 BPM for verse, potentially increasing tempo for chorus
-- Short, memorable lines in the chorus that would be easy to remember and sing along with
-- A melodic hook that repeats and becomes familiar
-- Contemporary vocal styling with some ad libs in the final chorus
-- Production inspiration from modern pop/rock/alternative artists rather than traditional worship artists
-- Avoid overt religious language that wouldn't connect with mainstream listeners
+${style}
 
-Use the following format with clear delimiters:
+SONGWRITING RULES:
+- NO hymn language (thee/thou/thy/hath) - this is 2024
+- NO cheesy Christian music clichés
+- Hook should be memorable, singable, sticky
+- Verses tell a story or paint a picture
+- Pre-chorus builds tension
+- Chorus releases with emotional punch
+- Bridge offers a twist or deeper moment
+- Professional structure: Verse/Pre/Chorus/Verse/Pre/Chorus/Bridge/Chorus
+- 3-4 minute song length when performed${langNote}
+
+The spiritual truth should be woven in naturally - not preachy, just real. Think "Viva La Vida" not "Amazing Grace."`,
+      prompt: `Write a radio-ready song inspired by ${verseReference}: "${verseText}"
 
 TITLE===
-[Song title here]
+[Catchy, intriguing title - could chart]
 ===TITLE
 
 SUBTITLE===
-[Genre/style like "Pop / Alternative Pop"]
+[Genre/style descriptor]
 ===SUBTITLE
 
 LYRICS===
-[Full song with structure markers like [Verse 1], [Chorus], etc.]
+[Full song with clear structure:
+VERSE 1
+(4-6 lines)
+
+PRE-CHORUS
+(2-4 lines building)
+
+CHORUS
+(memorable, repeatable, emotional peak)
+
+VERSE 2
+(advances the story/deepens emotion)
+
+PRE-CHORUS
+
+CHORUS
+
+BRIDGE
+(something unexpected, a twist)
+
+FINAL CHORUS
+(maybe bigger/different)]
 ===LYRICS
 
 AUDIO_PROMPT===
-[Suno AI prompt describing the musical style, tempo, instrumentation, and production]
+[Detailed Suno AI prompt: specific genre, tempo BPM, instruments, production style, mood, vocal style - 40 words]
 ===AUDIO_PROMPT
 
 IMAGE_PROMPT===
-[Album art description - modern Spotify aesthetic, artistic, contemporary design]
+[Album art: modern, Spotify-worthy, cinematic - 25 words]
 ===IMAGE_PROMPT`,
-      maxTokens: 3000,
+      maxTokens: 1800,
     })
 
     const titleMatch = text.match(/TITLE===\s*([\s\S]*?)\s*===TITLE/)
     const subtitleMatch = text.match(/SUBTITLE===\s*([\s\S]*?)\s*===SUBTITLE/)
     const lyricsMatch = text.match(/LYRICS===\s*([\s\S]*?)\s*===LYRICS/)
-    const audioPromptMatch = text.match(/AUDIO_PROMPT===\s*([\s\S]*?)\s*===AUDIO_PROMPT/)
-    const imagePromptMatch = text.match(/IMAGE_PROMPT===\s*([\s\S]*?)\s*===IMAGE_PROMPT/)
+    const audioMatch = text.match(/AUDIO_PROMPT===\s*([\s\S]*?)\s*===AUDIO_PROMPT/)
+    const imageMatch = text.match(/IMAGE_PROMPT===\s*([\s\S]*?)\s*===IMAGE_PROMPT/)
 
     if (!titleMatch || !lyricsMatch) {
-      throw new Error("Failed to parse song response")
+      throw new Error("Failed to parse song")
     }
 
-    const songs = {
-      title: titleMatch[1].trim(),
-      sub: subtitleMatch ? subtitleMatch[1].trim() : "Contemporary Pop",
-      lyrics: lyricsMatch[1].trim(),
-      prompt: audioPromptMatch ? audioPromptMatch[1].trim() : "uplifting contemporary pop song",
-      imagePrompt: imagePromptMatch ? imagePromptMatch[1].trim() : "modern album art, contemporary design",
-    }
-
-    return Response.json({ songs })
+    return Response.json({
+      songs: {
+        title: titleMatch[1].trim(),
+        sub: subtitleMatch?.[1]?.trim() || "Contemporary Pop",
+        lyrics: lyricsMatch[1].trim(),
+        prompt: audioMatch?.[1]?.trim() || "uplifting pop song, professional production",
+        imagePrompt: imageMatch?.[1]?.trim() || "modern album art, cinematic, atmospheric",
+      }
+    })
   } catch (error) {
-    console.error("Songs generation error:", error)
+    console.error("Songs error:", error)
     return Response.json({ error: "Failed to generate songs" }, { status: 500 })
   }
 }
 
-function getMusicStyleForAge(ageRange: string): string {
-  const styles: Record<string, string> = {
-    teens:
-      "Style: High-energy pop with electronic elements, synth-driven beats, upbeat tempo (120+ BPM), catchy vocal hooks, danceable rhythm. Think stadium pop anthems with youthful energy.",
-    university:
-      "Style: Atmospheric indie-pop with R&B influences, soulful vocals, vulnerable and emotionally raw lyrics. Mid-tempo (90-110 BPM), layered production, authentic and introspective.",
-    adult:
-      "Style: Anthemic pop-rock, powerful and radio-ready. Strong melodies, inspirational but genuine. Polished production with organic instruments, driving rhythm (100-120 BPM).",
-    senior:
-      "Style: Warm acoustic-pop with rich harmonies, melodic and timeless feel. Softer tempo (70-90 BPM), piano and acoustic guitar forward, emotionally resonant.",
-  }
-  return (
-    styles[ageRange] ||
-    "Style: Modern pop sound - catchy, emotional, radio-friendly production with contemporary electronic and acoustic elements."
-  )
-}
-
 function getLanguageName(code: string): string {
   const languages: Record<string, string> = {
-    en: "English",
-    es: "Spanish",
-    fr: "French",
-    de: "German",
-    pt: "Portuguese",
-    zh: "Chinese",
-    vi: "Vietnamese",
-    ko: "Korean",
-    th: "Thai",
+    es: "Spanish", fr: "French", de: "German", pt: "Portuguese",
+    zh: "Chinese", vi: "Vietnamese", ko: "Korean", th: "Thai",
   }
   return languages[code] || "English"
 }

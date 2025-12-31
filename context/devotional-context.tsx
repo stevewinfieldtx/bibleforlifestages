@@ -90,6 +90,7 @@ interface DevotionalContextType {
   userName: string
   setUserName: React.Dispatch<React.SetStateAction<string>>
   clearCache: () => void
+  isContentReady: boolean
 }
 
 const DevotionalContext = createContext<DevotionalContextType | null>(null)
@@ -117,7 +118,19 @@ interface UserProfile {
   gender: string
   stageSituation: string
   language?: string
+  contentStyle?: "casual" | "academic"
 }
+
+// Rotating loading messages
+const loadingMessages = [
+  "Creating something unique just for you...",
+  "Crafting your personal devotional...",
+  "Building original content for your journey...",
+  "This takes a moment—we're not using templates...",
+  "Personalizing scripture for your life stage...",
+  "Almost there—good things take time...",
+  "Generating fresh insights just for you...",
+]
 
 export function DevotionalProvider({ children }: { children: ReactNode }) {
   const [devotional, setDevotional] = useState<DevotionalData>({})
@@ -131,7 +144,29 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
     stageSituation: "Nothing special",
     language: "en",
   })
+  const [isContentReady, setIsContentReady] = useState(false)
   const { language: selectedLanguage } = useLanguage()
+
+  // Rotating message effect
+  const loadingMessageIndex = React.useRef(0)
+  const loadingIntervalRef = React.useRef<NodeJS.Timeout | null>(null)
+
+  const startLoadingMessages = useCallback(() => {
+    loadingMessageIndex.current = 0
+    setLoadingStep(loadingMessages[0])
+    
+    loadingIntervalRef.current = setInterval(() => {
+      loadingMessageIndex.current = (loadingMessageIndex.current + 1) % loadingMessages.length
+      setLoadingStep(loadingMessages[loadingMessageIndex.current])
+    }, 3000) // Rotate every 3 seconds
+  }, [])
+
+  const stopLoadingMessages = useCallback(() => {
+    if (loadingIntervalRef.current) {
+      clearInterval(loadingIntervalRef.current)
+      loadingIntervalRef.current = null
+    }
+  }, [])
 
   React.useEffect(() => {
     const storedVersion = localStorage.getItem("bible3_cache_version")
@@ -160,7 +195,8 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
           ageRange: parsed.ageRange || "",
           gender: parsed.gender || "",
           stageSituation: parsed.stageSituation || parsed.season || "Nothing special",
-          language: selectedLanguage, // Always use current language from context
+          language: selectedLanguage,
+          contentStyle: parsed.contentStyle || "casual",
         }
         console.log("[v0] getFreshProfile - parsed profile with language:", profile)
         return profile
@@ -172,7 +208,8 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
       ageRange: "",
       gender: "",
       stageSituation: "Nothing special",
-      language: selectedLanguage, // Always use current language from context
+      language: selectedLanguage,
+      contentStyle: "casual" as const,
     }
     console.log("[v0] getFreshProfile - using default:", defaultProfile)
     return defaultProfile
@@ -223,9 +260,10 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
   }
 
   const getCacheKey = (reference: string, profile: UserProfile) => {
-    const demographicKey = `${profile.ageRange}_${profile.stageSituation}`.toLowerCase().replace(/\s+/g, "_")
+    const style = profile.contentStyle || "casual"
+    const demographicKey = `${profile.ageRange}_${profile.stageSituation}_${style}`.toLowerCase().replace(/\s+/g, "_")
     const key = `bible3_cache_${reference.toLowerCase().replace(/\s+/g, "_")}_${demographicKey}`
-    console.log("[v0] getCacheKey:", key, "for age:", profile.ageRange, "situation:", profile.stageSituation)
+    console.log("[v0] getCacheKey:", key, "for age:", profile.ageRange, "situation:", profile.stageSituation, "style:", style)
     return key
   }
 
@@ -244,7 +282,7 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
         !!data.interpretation &&
         !data.interpretation.includes("Unable to generate") &&
         !data.interpretation.includes("error") &&
-        data.interpretation.length > 50 // Should be at least 50 chars for real content
+        data.interpretation.length > 50
 
       const hasStories = Array.isArray(data.stories) && data.stories.length > 0
       const hasHeroImage = !!data.heroImage
@@ -278,7 +316,7 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
     console.log("[v0] saveToCache - saved with keys:", Object.keys(devotional))
   }
 
-  const generateAllContent = useCallback(async (verse: VerseData, profile: UserProfile) => {
+  const generateAllContent = useCallback(async (verse: VerseData, profile: UserProfile, onCoreReady: () => void) => {
     const { reference, text } = verse
     const profilePayload = {
       verseReference: reference,
@@ -287,6 +325,7 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
       gender: profile.gender,
       stageSituation: profile.stageSituation,
       language: profile.language || "en",
+      contentStyle: profile.contentStyle || "casual",
     }
 
     const startTime = Date.now()
@@ -294,6 +333,7 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
 
     const completionTracker = {
       interpretation: false,
+      heroImage: false,
       context: false,
       stories: false,
       poetry: false,
@@ -301,8 +341,23 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
       songs: false,
     }
 
+    // Check if core content (interpretation + hero image) is ready
+    const checkCoreReady = () => {
+      if (completionTracker.interpretation && completionTracker.heroImage) {
+        console.log("[v0] ✅ CORE CONTENT READY - interpretation + hero image done")
+        onCoreReady()
+      }
+    }
+
     const checkAndSaveCache = () => {
-      if (Object.values(completionTracker).every(Boolean)) {
+      const allDone = completionTracker.interpretation && 
+                      completionTracker.heroImage &&
+                      completionTracker.context && 
+                      completionTracker.stories && 
+                      completionTracker.poetry && 
+                      completionTracker.imagery && 
+                      completionTracker.songs
+      if (allDone) {
         console.log("[v0] All content complete, saving to cache with images")
         setDevotional((currentDevotional) => {
           saveToCache(reference, profile, currentDevotional)
@@ -326,6 +381,7 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
 
     console.log("[v0] 🚀 Firing ALL text APIs in parallel NOW")
 
+    // INTERPRETATION + HERO IMAGE (core content)
     setLoadingStates((prev) => ({ ...prev, interpretation: true }))
     const interpretationStart = Date.now()
     fetch("/api/generate-interpretation", {
@@ -342,6 +398,9 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
           heroImagePrompt: data.heroImagePrompt,
         }))
         setLoadingStates((prev) => ({ ...prev, interpretation: false }))
+        completionTracker.interpretation = true
+        checkCoreReady()
+        
         if (data.heroImagePrompt) {
           const imgStart = Date.now()
           console.log("[v0] 🖼️ Starting hero IMAGE generation")
@@ -350,17 +409,25 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
             console.log(`[v0] ✅ Hero IMAGE received in ${Date.now() - imgStart}ms`)
             setDevotional((prev) => ({ ...prev, heroImage }))
           }
+          completionTracker.heroImage = true
+          checkCoreReady()
+          checkAndSaveCache()
+        } else {
+          completionTracker.heroImage = true
+          checkCoreReady()
+          checkAndSaveCache()
         }
-        completionTracker.interpretation = true
-        checkAndSaveCache()
       })
       .catch((err) => {
         console.error("❌ Interpretation error:", err)
         setLoadingStates((prev) => ({ ...prev, interpretation: false }))
         completionTracker.interpretation = true
+        completionTracker.heroImage = true
+        checkCoreReady()
         checkAndSaveCache()
       })
 
+    // CONTEXT
     setLoadingStates((prev) => ({ ...prev, context: true }))
     const contextStart = Date.now()
     fetch("/api/generate-context", {
@@ -392,6 +459,7 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
         checkAndSaveCache()
       })
 
+    // STORIES
     setLoadingStates((prev) => ({ ...prev, stories: true }))
     const storiesStart = Date.now()
 
@@ -443,6 +511,7 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
         checkAndSaveCache()
       })
 
+    // POETRY
     setLoadingStates((prev) => ({ ...prev, poetry: true }))
     const poetryStart = Date.now()
 
@@ -494,6 +563,7 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
         checkAndSaveCache()
       })
 
+    // IMAGERY
     setLoadingStates((prev) => ({ ...prev, imagery: true }))
     const imageryStart = Date.now()
     fetch("/api/generate-imagery", {
@@ -533,6 +603,7 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
         checkAndSaveCache()
       })
 
+    // SONGS
     setLoadingStates((prev) => ({ ...prev, songs: true }))
     const songsStart = Date.now()
     fetch("/api/generate-songs", {
@@ -578,7 +649,8 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
   const generateDevotional = useCallback(
     async (source = "Random") => {
       setIsLoading(true)
-      setLoadingStep(`Connecting to ${source}...`)
+      setIsContentReady(false)
+      startLoadingMessages()
       setDevotional({})
       setLoadingStates({ ...initialLoadingStates, verse: true })
 
@@ -595,8 +667,8 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(
             isVerseReference
-              ? { verseQuery: source } // Send as verseQuery for specific verses
-              : { source }, // Send as source for VOTD services
+              ? { verseQuery: source }
+              : { source },
           ),
         })
 
@@ -613,7 +685,8 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
           setDevotional(cached)
           setLoadingStates(initialLoadingStates)
           setIsLoading(false)
-          setLoadingStep("")
+          setIsContentReady(true)
+          stopLoadingMessages()
           currentVerseRef.current = verse.reference
           currentProfileRef.current = freshProfile
           return
@@ -621,28 +694,36 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
 
         setDevotional({ verse })
         setLoadingStates((prev) => ({ ...prev, verse: false }))
-        setLoadingStep("Generating content...")
-        setIsLoading(false)
 
         currentVerseRef.current = verse.reference
         currentProfileRef.current = freshProfile
-        generateAllContent(verse, freshProfile)
+        
+        // Generate content and wait for core content to be ready
+        generateAllContent(verse, freshProfile, () => {
+          // This callback fires when interpretation + hero image are ready
+          console.log("[v0] Core content ready - stopping loading state")
+          stopLoadingMessages()
+          setIsLoading(false)
+          setIsContentReady(true)
+        })
       } catch (error) {
         console.error("Generation failed:", error)
         setLoadingStep("Connection error. Please try again.")
+        stopLoadingMessages()
         setTimeout(() => {
           setIsLoading(false)
           setLoadingStates(initialLoadingStates)
         }, 2000)
       }
     },
-    [generateAllContent],
+    [generateAllContent, startLoadingMessages, stopLoadingMessages, getFreshProfile],
   )
 
   const generateForVerse = useCallback(
     async (verseQuery: string) => {
       setIsLoading(true)
-      setLoadingStep(`Searching for ${verseQuery}...`)
+      setIsContentReady(false)
+      startLoadingMessages()
       setDevotional({})
       setLoadingStates({ ...initialLoadingStates, verse: true })
 
@@ -655,7 +736,8 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
           setDevotional(cached)
           setLoadingStates(initialLoadingStates)
           setIsLoading(false)
-          setLoadingStep("")
+          setIsContentReady(true)
+          stopLoadingMessages()
           currentVerseRef.current = verseQuery
           currentProfileRef.current = freshProfile
           return
@@ -676,7 +758,8 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
           setDevotional(cachedByRef)
           setLoadingStates(initialLoadingStates)
           setIsLoading(false)
-          setLoadingStep("")
+          setIsContentReady(true)
+          stopLoadingMessages()
           currentVerseRef.current = verse.reference
           currentProfileRef.current = freshProfile
           return
@@ -684,22 +767,26 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
 
         setDevotional({ verse })
         setLoadingStates((prev) => ({ ...prev, verse: false }))
-        setLoadingStep("Generating content...")
-        setIsLoading(false)
 
         currentVerseRef.current = verse.reference
         currentProfileRef.current = freshProfile
-        generateAllContent(verse, freshProfile)
+        
+        generateAllContent(verse, freshProfile, () => {
+          stopLoadingMessages()
+          setIsLoading(false)
+          setIsContentReady(true)
+        })
       } catch (error) {
         console.error("Generation failed:", error)
         setLoadingStep("Connection error. Please try again.")
+        stopLoadingMessages()
         setTimeout(() => {
           setIsLoading(false)
           setLoadingStates(initialLoadingStates)
         }, 2000)
       }
     },
-    [generateAllContent],
+    [generateAllContent, startLoadingMessages, stopLoadingMessages, getFreshProfile],
   )
 
   const clearCache = useCallback(() => {
@@ -733,6 +820,13 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
     }
   }, [devotional])
 
+  // Cleanup on unmount
+  React.useEffect(() => {
+    return () => {
+      stopLoadingMessages()
+    }
+  }, [stopLoadingMessages])
+
   return (
     <DevotionalContext.Provider
       value={{
@@ -748,6 +842,7 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
         userName,
         setUserName,
         clearCache,
+        isContentReady,
       }}
     >
       {children}

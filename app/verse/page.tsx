@@ -7,14 +7,30 @@ import { useSubscription } from "@/context/subscription-context"
 import { HeaderDropdown } from "@/components/header-dropdown"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
 
+// Deep Dive topics available to users
+const DEEP_DIVE_TOPICS = [
+  { id: "cancer-fighting", label: "Fighting Cancer", icon: "healing", desc: "For those in treatment" },
+  { id: "cancer-support", label: "Supporting Someone with Cancer", icon: "volunteer_activism", desc: "For caregivers & loved ones" },
+  { id: "autism-family", label: "Autism in the Family", icon: "family_restroom", desc: "For families with autistic members" },
+  { id: "grief", label: "Grieving a Loss", icon: "heart_broken", desc: "Processing death or major loss" },
+  { id: "divorce", label: "Going Through Divorce", icon: "link_off", desc: "Navigating separation" },
+  { id: "financial-crisis", label: "Financial Crisis", icon: "money_off", desc: "Struggling with money" },
+  { id: "loneliness", label: "Loneliness & Isolation", icon: "person_off", desc: "Feeling disconnected" },
+  { id: "aging-parents", label: "Caring for Aging Parents", icon: "elderly", desc: "Caregiver support" },
+  { id: "addiction", label: "Addiction Struggle", icon: "psychology_alt", desc: "Self or loved one" },
+  { id: "faith-doubt", label: "Crisis of Faith", icon: "help", desc: "Wrestling with doubt" },
+  { id: "chronic-illness", label: "Chronic Illness", icon: "medical_services", desc: "Living with ongoing health issues" },
+  { id: "mental-health", label: "Mental Health", icon: "neurology", desc: "Anxiety, depression, & more" },
+]
+
 export default function VerseInterpretationPage() {
   const router = useRouter()
   const { devotional, loadingStates, isLoading } = useDevotional()
-  const { canAccessPremium } = useSubscription()
+  const { canAccessCore, tier } = useSubscription()
   const [showHeaderTitle, setShowHeaderTitle] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
   const [hasWaited, setHasWaited] = useState(false)
-  const [showAutismSupport, setShowAutismSupport] = useState(false)
+  const [showDeepDiveModal, setShowDeepDiveModal] = useState(false)
   const mainRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -30,17 +46,6 @@ export default function VerseInterpretationPage() {
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
 
-  // Check if autism support is enabled in profile
-  useEffect(() => {
-    try {
-      const savedProfile = localStorage.getItem("userProfile")
-      if (savedProfile) {
-        const parsed = JSON.parse(savedProfile)
-        setShowAutismSupport(parsed.diveDeeper?.autismFamily || false)
-      }
-    } catch (e) { /* ignore */ }
-  }, [])
-
   // Wait 5 seconds before allowing redirect - gives time for verse to load
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -52,16 +57,9 @@ export default function VerseInterpretationPage() {
   // Only redirect if we've waited AND there's no verse AND we're not loading
   useEffect(() => {
     if (hasWaited && !devotional.verse?.reference && !isLoading) {
-      console.log("[v0] Verse page - No verse after timeout and not loading, redirecting to home")
       router.push("/")
     }
   }, [hasWaited, devotional.verse?.reference, isLoading, router])
-
-  useEffect(() => {
-    console.log("[v0] Verse page - devotional.verse:", devotional.verse?.reference)
-    console.log("[v0] Verse page - devotional.interpretation:", devotional.interpretation?.substring(0, 50))
-    console.log("[v0] Verse page - isLoading:", isLoading)
-  }, [devotional.verse, devotional.interpretation, isLoading])
 
   // Show loading state while waiting for verse
   if (!devotional.verse) {
@@ -79,6 +77,7 @@ export default function VerseInterpretationPage() {
     ? devotional.interpretation.split(/\n\n+/).filter((p) => p.trim().length > 0)
     : []
 
+  // Fixed 6 buttons: Context, Stories, Poetry, Imagery, Songs, Deep Dive
   const deepenItems = [
     {
       label: "Context",
@@ -88,7 +87,7 @@ export default function VerseInterpretationPage() {
       color: "from-amber-500 to-orange-500",
       bg: "bg-amber-100",
       text: "text-amber-700",
-      premium: true,
+      requiresCore: true,
     },
     {
       label: "Stories",
@@ -98,7 +97,7 @@ export default function VerseInterpretationPage() {
       color: "from-emerald-500 to-teal-500",
       bg: "bg-emerald-100",
       text: "text-emerald-700",
-      premium: true,
+      requiresCore: true,
     },
     {
       label: "Poetry",
@@ -108,7 +107,7 @@ export default function VerseInterpretationPage() {
       color: "from-purple-500 to-pink-500",
       bg: "bg-purple-100",
       text: "text-purple-700",
-      premium: true,
+      requiresCore: true,
     },
     {
       label: "Imagery",
@@ -118,7 +117,7 @@ export default function VerseInterpretationPage() {
       color: "from-blue-500 to-cyan-500",
       bg: "bg-blue-100",
       text: "text-blue-700",
-      premium: true,
+      requiresCore: true,
     },
     {
       label: "Songs",
@@ -128,46 +127,111 @@ export default function VerseInterpretationPage() {
       color: "from-rose-500 to-red-500",
       bg: "bg-rose-100",
       text: "text-rose-700",
-      premium: true,
+      requiresCore: true,
     },
-  ]
-
-  // Add autism support button in 6th position if enabled
-  if (showAutismSupport) {
-    deepenItems.push({
+    {
       label: "Deep Dive",
-      sub: "Autism family support",
-      icon: "family_restroom",
-      path: "/autism-support",
+      sub: "Go deeper on hard topics",
+      icon: "explore",
+      path: "", // Opens modal instead
       color: "from-blue-600 to-purple-600",
       bg: "bg-blue-100",
       text: "text-blue-700",
-      premium: true,
-    })
-  }
+      requiresCore: true,
+      isDeepDive: true,
+    },
+  ]
 
-  // Let's Talk always goes last (full width)
-  deepenItems.push({
-    label: "Let's Talk",
-    sub: "Chat about it",
-    icon: "forum",
-    path: "/talk",
-    color: "from-indigo-500 to-violet-500",
-    bg: "bg-indigo-100",
-    text: "text-indigo-700",
-    premium: true,
-  })
+  const handleDeepDiveSelect = (topicId: string) => {
+    const topic = DEEP_DIVE_TOPICS.find(t => t.id === topicId)
+    if (topic) {
+      setShowDeepDiveModal(false)
+      router.push(`/deep-dive?topic=${encodeURIComponent(topic.label)}`)
+    }
+  }
 
   const heroImageUrl = devotional.heroImage || "/spiritual-peaceful-landscape-golden-hour.jpg"
   const isInterpretationLoading = loadingStates?.interpretation
+
+  // Deep Dive limits
+  const deepDiveLimit = tier === "free" ? 0 : tier === "core" ? 1 : 5
+  const deepDiveLimitText = tier === "free" ? "Upgrade for access" : tier === "core" ? "1/day" : "5/day"
 
   return (
     <div
       ref={mainRef}
       className="relative flex min-h-screen w-full flex-col max-w-md mx-auto bg-gradient-to-b from-orange-50 via-background to-background shadow-2xl"
     >
+      {/* Deep Dive Modal */}
+      {showDeepDiveModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50">
+          <div className="bg-card rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[80vh] overflow-hidden shadow-xl animate-in slide-in-from-bottom duration-300">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-border bg-gradient-to-r from-blue-600 to-purple-600 text-white">
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined">explore</span>
+                <div>
+                  <h3 className="font-bold">Deep Dive</h3>
+                  <p className="text-xs text-white/80">{deepDiveLimitText}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowDeepDiveModal(false)}
+                className="size-8 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition-colors"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+            
+            {/* Modal Content */}
+            <div className="p-4 overflow-y-auto max-h-[60vh]">
+              <p className="text-sm text-muted-foreground mb-4">
+                Select a topic to explore today's verse through that lens:
+              </p>
+              
+              {tier === "free" ? (
+                <div className="text-center py-8">
+                  <div className="size-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                    <span className="material-symbols-outlined text-3xl text-muted-foreground">lock</span>
+                  </div>
+                  <h4 className="font-bold mb-2">Upgrade to Access Deep Dives</h4>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Get personalized reflections for life's hardest moments.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setShowDeepDiveModal(false)
+                      router.push("/subscription")
+                    }}
+                    className="px-6 py-2 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold"
+                  >
+                    View Plans
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {DEEP_DIVE_TOPICS.map((topic) => (
+                    <button
+                      key={topic.id}
+                      onClick={() => handleDeepDiveSelect(topic.id)}
+                      className="flex flex-col items-start p-3 rounded-xl border border-border bg-card hover:border-purple-300 hover:bg-purple-50 transition-all text-left"
+                    >
+                      <div className="size-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 text-white flex items-center justify-center mb-2">
+                        <span className="material-symbols-outlined text-sm">{topic.icon}</span>
+                      </div>
+                      <span className="font-semibold text-sm leading-tight">{topic.label}</span>
+                      <span className="text-xs text-muted-foreground mt-0.5">{topic.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sticky Header */}
-      <div className="sticky top-0 z-50 flex items-center bg-background/95 backdrop-blur-md p-4 justify-between border-b border-border">
+      <div className="sticky top-0 z-40 flex items-center bg-background/95 backdrop-blur-md p-4 justify-between border-b border-border">
         <button
           onClick={() => router.push("/")}
           className="flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-muted transition-colors"
@@ -280,7 +344,7 @@ export default function VerseInterpretationPage() {
         <div className="px-5 pb-8">
           <h3 className="text-lg font-bold mb-4 px-1">Dive Deeper</h3>
 
-          {!canAccessPremium && (
+          {!canAccessCore && (
             <div className="mb-4">
               <UpgradePrompt feature="Stories, Poetry, Imagery, Songs, and Context" />
             </div>
@@ -288,42 +352,51 @@ export default function VerseInterpretationPage() {
 
           <div className="grid grid-cols-2 gap-3">
             {deepenItems.map((item, idx) => {
-              const isLocked = item.premium && !canAccessPremium
-              const isLastItem = idx === deepenItems.length - 1
-              const isLetsTalk = item.label === "Let's Talk"
+              const isLocked = item.requiresCore && !canAccessCore
               return (
                 <button
                   key={idx}
-                  onClick={() => !isLocked && router.push(item.path)}
+                  onClick={() => {
+                    if (isLocked) return
+                    if (item.isDeepDive) {
+                      setShowDeepDiveModal(true)
+                    } else {
+                      router.push(item.path)
+                    }
+                  }}
                   disabled={isLocked}
-                  className={`group flex ${isLetsTalk ? "flex-row items-center col-span-2" : "flex-col items-start"} p-4 bg-card rounded-xl border border-border shadow-sm transition-all ${
+                  className={`group flex flex-col items-start p-4 bg-card rounded-xl border border-border shadow-sm transition-all ${
                     isLocked ? "opacity-50 cursor-not-allowed" : "active:scale-[0.98] hover:shadow-md"
                   }`}
                 >
                   <div
-                    className={`size-10 rounded-full bg-gradient-to-br ${item.color} text-white flex items-center justify-center ${isLetsTalk ? "mr-4" : "mb-3"} relative`}
+                    className={`size-10 rounded-full bg-gradient-to-br ${item.color} text-white flex items-center justify-center mb-3 relative`}
                   >
                     <span className="material-symbols-outlined">{isLocked ? "lock" : item.icon}</span>
                   </div>
-                  <div className={isLetsTalk ? "flex-1" : ""}>
-                    <span className="font-bold block">{item.label}</span>
-                    <span className={`text-xs ${item.text} mt-1 text-left font-medium`}>{item.sub}</span>
-                  </div>
+                  <span className="font-bold block">{item.label}</span>
+                  <span className={`text-xs ${item.text} mt-1 text-left font-medium`}>{item.sub}</span>
                 </button>
               )
             })}
           </div>
+
+          {/* Let's Talk - Full Width Below */}
+          <button
+            onClick={() => router.push("/talk")}
+            className="mt-3 w-full flex items-center p-4 bg-card rounded-xl border border-border shadow-sm transition-all active:scale-[0.98] hover:shadow-md"
+          >
+            <div className="size-10 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 text-white flex items-center justify-center mr-4">
+              <span className="material-symbols-outlined">forum</span>
+            </div>
+            <div className="flex-1 text-left">
+              <span className="font-bold block">Let's Talk</span>
+              <span className="text-xs text-indigo-700 font-medium">Chat about today's verse</span>
+            </div>
+            <span className="material-symbols-outlined text-indigo-500">arrow_forward</span>
+          </button>
         </div>
       </main>
-
-      {/* FAB */}
-      <div className="fixed bottom-6 right-6 z-40">
-        <button className="flex items-center justify-center size-14 rounded-full bg-gradient-to-br from-primary to-orange-400 text-white shadow-lg active:scale-95 transition-transform hover:shadow-xl">
-          <span className="material-symbols-outlined" style={{ fontSize: "28px" }}>
-            headphones
-          </span>
-        </button>
-      </div>
     </div>
   )
 }

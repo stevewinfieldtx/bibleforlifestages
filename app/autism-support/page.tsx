@@ -66,6 +66,10 @@ export default function AutismSupportPage() {
     generateReflection()
   }, [devotional.verse, router])
 
+  const handleTalkAboutThis = () => {
+    router.push("/talk?deepDive=true&topic=Autism Family Support")
+  }
+
   if (!devotional.verse) {
     return null
   }
@@ -160,6 +164,24 @@ export default function AutismSupportPage() {
             <span className="text-primary font-semibold">You are seen.</span> Your family&apos;s journey matters. 
             God is with you in every moment - the hard ones and the beautiful ones. 💙
           </p>
+        </div>
+
+        {/* Do you want to talk about this? Button */}
+        <div className="mt-8 mb-4">
+          <button
+            onClick={handleTalkAboutThis}
+            className="w-full bg-gradient-to-br from-blue-600 to-purple-600 text-white rounded-2xl p-5 shadow-lg hover:shadow-xl active:scale-[0.98] transition-all"
+          >
+            <div className="flex items-center justify-center gap-3">
+              <div className="size-12 rounded-full bg-white/20 flex items-center justify-center">
+                <span className="material-symbols-outlined text-2xl">mic</span>
+              </div>
+              <div className="text-left">
+                <p className="text-lg font-bold">Do you want to talk about this?</p>
+                <p className="text-sm text-white/80">I&apos;m here to listen</p>
+              </div>
+            </div>
+          </button>
         </div>
       </main>
     </div>
