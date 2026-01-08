@@ -270,6 +270,42 @@ export default function ProfilePage() {
           </span>
           <p className="text-xs text-muted-foreground leading-relaxed">{t("privacyNote")}</p>
         </div>
+
+        {/* Legal & Support Links */}
+        <div className="pt-6 border-t border-border mt-4">
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={() => router.push("/support")}
+              className="flex items-center justify-between p-3 rounded-xl bg-card border border-border hover:bg-muted transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-muted-foreground">help</span>
+                <span className="text-sm font-medium">Help & Support</span>
+              </div>
+              <span className="material-symbols-outlined text-muted-foreground">chevron_right</span>
+            </button>
+            <button
+              onClick={() => router.push("/privacy")}
+              className="flex items-center justify-between p-3 rounded-xl bg-card border border-border hover:bg-muted transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-muted-foreground">shield</span>
+                <span className="text-sm font-medium">Privacy Policy</span>
+              </div>
+              <span className="material-symbols-outlined text-muted-foreground">chevron_right</span>
+            </button>
+            <button
+              onClick={() => router.push("/terms")}
+              className="flex items-center justify-between p-3 rounded-xl bg-card border border-border hover:bg-muted transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-muted-foreground">description</span>
+                <span className="text-sm font-medium">Terms of Service</span>
+              </div>
+              <span className="material-symbols-outlined text-muted-foreground">chevron_right</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Sticky Footer Button */}

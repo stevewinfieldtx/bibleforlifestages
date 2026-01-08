@@ -3,7 +3,10 @@
 import React, { createContext, useContext, useState, type ReactNode, useCallback } from "react"
 import { useLanguage } from "./language-context"
 
-const CACHE_VERSION = "v9"
+const CACHE_VERSION = "v11"
+
+// Cache is now GLOBAL - same content for everyone viewing the same verse
+// Personalization (age/situation) should happen at display time, not generation time
 
 export interface VerseData {
   reference: string
@@ -65,6 +68,7 @@ export interface DevotionalData {
   poetry?: PoetryData[]
   imagery?: ImageryData[]
   songs?: SongData
+  source?: string // Track where this devotional came from (e.g., "Theme:Forgiveness", "YouVersion", etc.)
 }
 
 interface LoadingStates {
@@ -260,10 +264,13 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
   }
 
   const getCacheKey = (reference: string, profile: UserProfile) => {
-    const style = profile.contentStyle || "casual"
-    const demographicKey = `${profile.ageRange}_${profile.stageSituation}_${style}`.toLowerCase().replace(/\s+/g, "_")
-    const key = `bible3_cache_${reference.toLowerCase().replace(/\s+/g, "_")}_${demographicKey}`
-    console.log("[v0] getCacheKey:", key, "for age:", profile.ageRange, "situation:", profile.stageSituation, "style:", style)
+    // Global cache by verse + demographics
+    // Same age/gender/situation combo gets the same cached content
+    const age = profile.ageRange || "adult"
+    const situation = profile.stageSituation || "general"
+    const demographicKey = `${age}_${situation}`.toLowerCase().replace(/\s+/g, "_")
+    const key = `bible3_cache_${reference.toLowerCase().replace(/[\s:]+/g, "_")}_${demographicKey}`
+    console.log("[v0] getCacheKey:", key)
     return key
   }
 
@@ -316,7 +323,7 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
     console.log("[v0] saveToCache - saved with keys:", Object.keys(devotional))
   }
 
-  const generateAllContent = useCallback(async (verse: VerseData, profile: UserProfile, onCoreReady: () => void) => {
+  const generateAllContent = useCallback(async (verse: VerseData, profile: UserProfile, onCoreReady: () => void, theme?: string) => {
     const { reference, text } = verse
     const profilePayload = {
       verseReference: reference,
@@ -326,6 +333,7 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
       stageSituation: profile.stageSituation,
       language: profile.language || "en",
       contentStyle: profile.contentStyle || "casual",
+      theme, // Pass theme for theme-based devotionals
     }
 
     const startTime = Date.now()
@@ -399,7 +407,7 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
         }))
         setLoadingStates((prev) => ({ ...prev, interpretation: false }))
         completionTracker.interpretation = true
-        checkCoreReady()
+        // DON'T call checkCoreReady here - wait for hero image!
         
         if (data.heroImagePrompt) {
           const imgStart = Date.now()
@@ -410,9 +418,11 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
             setDevotional((prev) => ({ ...prev, heroImage }))
           }
           completionTracker.heroImage = true
+          // NOW call checkCoreReady - both interpretation and image are done
           checkCoreReady()
           checkAndSaveCache()
         } else {
+          // No hero image needed, mark as done
           completionTracker.heroImage = true
           checkCoreReady()
           checkAndSaveCache()
@@ -646,6 +656,91 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
   const currentVerseRef = React.useRef<string | null>(null)
   const currentProfileRef = React.useRef<UserProfile | null>(null)
 
+  // Generate THEME-based devotional (no verse, just discuss the theme)
+  const generateThemeDevotional = useCallback(
+    async (theme: string, profile: UserProfile) => {
+      console.log("[v0] generateThemeDevotional - theme:", theme)
+      
+      const cacheKey = getCacheKey(`theme_${theme}`, profile)
+      const cached = loadFromCache(`theme_${theme}`, profile)
+      if (cached) {
+        console.log("[v0] Theme devotional found in cache")
+        setDevotional({ ...cached, source: `Theme:${theme}` })
+        setLoadingStates(initialLoadingStates)
+        setIsLoading(false)
+        setIsContentReady(true)
+        stopLoadingMessages()
+        currentVerseRef.current = `theme_${theme}`
+        currentProfileRef.current = profile
+        return
+      }
+
+      setDevotional({ source: `Theme:${theme}` })
+      setLoadingStates((prev) => ({ ...prev, verse: false, interpretation: true }))
+
+      currentVerseRef.current = `theme_${theme}`
+      currentProfileRef.current = profile
+
+      const startTime = Date.now()
+      
+      // Call interpretation API with ONLY the theme (no verse)
+      try {
+        const interpretationResponse = await fetch("/api/generate-interpretation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            theme,
+            ageRange: profile.ageRange,
+            language: profile.language || "en",
+            contentStyle: profile.contentStyle || "casual",
+          }),
+        })
+
+        if (!interpretationResponse.ok) throw new Error("Failed to generate theme teaching")
+        
+        const data = await interpretationResponse.json()
+        console.log(`[v0] ✅ Theme teaching received in ${Date.now() - startTime}ms`)
+        
+        setDevotional((prev) => ({
+          ...prev,
+          interpretation: data.interpretation,
+          heroImagePrompt: data.heroImagePrompt,
+        }))
+        setLoadingStates((prev) => ({ ...prev, interpretation: false }))
+
+        // Generate hero image
+        if (data.heroImagePrompt) {
+          const heroImage = await generateImage(data.heroImagePrompt, 1024, 768, profile)
+          if (heroImage) {
+            setDevotional((prev) => ({ ...prev, heroImage }))
+          }
+        }
+
+        // Core content ready - show the page
+        stopLoadingMessages()
+        setIsLoading(false)
+        setIsContentReady(true)
+
+        // Save to cache
+        setDevotional((currentDevotional) => {
+          saveToCache(`theme_${theme}`, profile, currentDevotional)
+          return currentDevotional
+        })
+
+        console.log(`[v0] ⏱️ Theme devotional complete in ${Date.now() - startTime}ms`)
+      } catch (error) {
+        console.error("Theme generation failed:", error)
+        setLoadingStep("Connection error. Please try again.")
+        stopLoadingMessages()
+        setTimeout(() => {
+          setIsLoading(false)
+          setLoadingStates(initialLoadingStates)
+        }, 2000)
+      }
+    },
+    [stopLoadingMessages],
+  )
+
   const generateDevotional = useCallback(
     async (source = "Random") => {
       setIsLoading(true)
@@ -659,6 +754,14 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
       console.log("[v0] generateDevotional - freshProfile:", JSON.stringify(freshProfile))
       setUserProfile(freshProfile)
 
+      // THEME-BASED: No verse, just discuss the theme
+      if (source.startsWith("Theme:")) {
+        const theme = source.split(":")[1]
+        await generateThemeDevotional(theme, freshProfile)
+        return
+      }
+
+      // VERSE-BASED: YouVersion, Find a Verse, etc.
       try {
         const isVerseReference = /^[A-Za-z0-9\s]+\d+:\d+/.test(source)
 
@@ -682,7 +785,7 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
 
         const cached = loadFromCache(verse.reference, freshProfile)
         if (cached) {
-          setDevotional(cached)
+          setDevotional({ ...cached, source })
           setLoadingStates(initialLoadingStates)
           setIsLoading(false)
           setIsContentReady(true)
@@ -692,7 +795,7 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
           return
         }
 
-        setDevotional({ verse })
+        setDevotional({ verse, source })
         setLoadingStates((prev) => ({ ...prev, verse: false }))
 
         currentVerseRef.current = verse.reference
@@ -716,7 +819,7 @@ export function DevotionalProvider({ children }: { children: ReactNode }) {
         }, 2000)
       }
     },
-    [generateAllContent, startLoadingMessages, stopLoadingMessages, getFreshProfile],
+    [generateAllContent, generateThemeDevotional, startLoadingMessages, stopLoadingMessages, getFreshProfile],
   )
 
   const generateForVerse = useCallback(

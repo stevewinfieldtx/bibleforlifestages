@@ -34,28 +34,30 @@ Return JSON only:
       "title": "The image/symbol name",
       "sub": "3-4 sentences of real insight - cultural context, emotional resonance, what's often missed, why it matters",
       "icon": "material_icon_name",
-      "imagePrompt": "Evocative artistic visualization of this symbol, painterly, emotional, 25 words"
+      "imagePrompt": "Evocative artistic visualization of this symbol, painterly, emotional, NO TEXT NO WORDS NO LETTERS NO WRITING, 25 words"
     },
     {
       "title": "Second image",
       "sub": "3-4 sentences of genuine insight",
       "icon": "material_icon_name",
-      "imagePrompt": "Artistic scene, 25 words"
+      "imagePrompt": "Artistic scene, NO TEXT NO WORDS NO LETTERS, 25 words"
     },
     {
       "title": "Third image",
       "sub": "3-4 sentences of genuine insight",
       "icon": "material_icon_name",
-      "imagePrompt": "Artistic scene, 25 words"
+      "imagePrompt": "Artistic scene, NO TEXT NO WORDS NO LETTERS, 25 words"
     },
     {
       "title": "Fourth image",
       "sub": "3-4 sentences of genuine insight",
       "icon": "material_icon_name",
-      "imagePrompt": "Artistic scene, 25 words"
+      "imagePrompt": "Artistic scene, NO TEXT NO WORDS NO LETTERS, 25 words"
     }
   ]
 }
+
+IMPORTANT: Every imagePrompt MUST include "NO TEXT NO WORDS NO LETTERS" to prevent any writing from appearing in the generated images.
 
 Good icon options: auto_awesome, water_drop, spa, wb_sunny, landscape, favorite, shield, local_fire_department, air, anchor, brightness_high, park, psychology, visibility, route`,
       maxTokens: 1500,

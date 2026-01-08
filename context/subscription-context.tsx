@@ -1,6 +1,15 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from "react"
+import { 
+  configureRevenueCat, 
+  getCustomerInfo, 
+  getOfferings,
+  purchasePackage,
+  restorePurchases,
+  ENTITLEMENTS,
+} from "@/lib/revenuecat"
+import type { CustomerInfo, Offerings, Package } from "@revenuecat/purchases-js"
 
 type SubscriptionTier = "free" | "trial" | "core" | "premium"
 
@@ -11,18 +20,36 @@ interface VoiceUsage {
 }
 
 interface SubscriptionContextType {
+  // Subscription state
   tier: SubscriptionTier
-  trialEndsAt: number | null
-  isTrialActive: boolean
-  daysLeftInTrial: number
+  isLoading: boolean
+  customerInfo: CustomerInfo | null
+  offerings: Offerings | null
+  
+  // Computed properties
+  isPremium: boolean
   canAccessPremium: boolean
   canAccessCore: boolean
   canSearchCustomVerse: boolean
+  
+  // Voice usage
   voiceUsage: VoiceUsage
   canUseVoice: boolean
   useVoiceCheckIn: () => boolean
+  
+  // Trial state
+  isTrialActive: boolean
+  daysLeftInTrial: number
+  trialEndsAt: number | null
+  
+  // Actions - RevenueCat
+  purchase: (pkg: Package) => Promise<boolean>
+  restore: () => Promise<boolean>
+  refreshCustomerInfo: () => Promise<void>
+  
+  // Legacy actions (for backwards compatibility - redirect to subscription page)
   startTrial: () => void
-  upgradeToPaid: (plan: "core" | "premium") => void
+  upgradeToPaid: (plan: "core" | "premium" | "premium-yearly") => void
   downgrade: () => void
 }
 
@@ -30,67 +57,126 @@ const SubscriptionContext = createContext<SubscriptionContextType | undefined>(u
 
 // Voice check-in limits by tier
 const VOICE_LIMITS = {
-  free: { weekly: 1 }, // 1 per week = ~4 per month
-  trial: { monthly: 20 }, // Same as core during trial
-  core: { monthly: 20 },
-  premium: { monthly: Infinity }, // Unlimited
+  free: 1,      // 1 per week
+  trial: 999,   // Essentially unlimited during trial
+  core: 20,     // 20 per month
+  premium: 999, // Unlimited
+}
+
+// Helper function to get voice limit
+function getVoiceLimit(tier: SubscriptionTier): number {
+  return VOICE_LIMITS[tier] ?? VOICE_LIMITS.free
+}
+
+// Helper function to check if new week
+function isNewWeek(lastDate: string, currentDate: string): boolean {
+  const last = new Date(lastDate)
+  const current = new Date(currentDate)
+  
+  const lastMonday = new Date(last)
+  lastMonday.setDate(last.getDate() - last.getDay() + 1)
+  
+  const currentMonday = new Date(current)
+  currentMonday.setDate(current.getDate() - current.getDay() + 1)
+  
+  return currentMonday > lastMonday
+}
+
+// Helper function to determine tier from customer info
+function getTierFromCustomerInfo(customerInfo: CustomerInfo | null): SubscriptionTier {
+  if (!customerInfo) return "free"
+  
+  const premiumEntitlement = customerInfo.entitlements.active[ENTITLEMENTS.PREMIUM]
+  if (!premiumEntitlement) return "free"
+  
+  // Check if it's a trial
+  if (premiumEntitlement.periodType === "trial") return "trial"
+  
+  return "premium"
 }
 
 export function SubscriptionProvider({ children }: { children: ReactNode }) {
-  const [tier, setTier] = useState<SubscriptionTier>("free")
-  const [trialEndsAt, setTrialEndsAt] = useState<number | null>(null)
+  const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null)
+  const [offerings, setOfferings] = useState<Offerings | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
   const [voiceUsage, setVoiceUsage] = useState<VoiceUsage>({
     checkInsUsed: 0,
-    checkInsLimit: VOICE_LIMITS.free.weekly,
+    checkInsLimit: VOICE_LIMITS.free,
     lastResetDate: new Date().toISOString().split("T")[0],
   })
 
-  // Load subscription state from localStorage
+  // Determine subscription tier from customer info
+  const tier = useMemo(() => getTierFromCustomerInfo(customerInfo), [customerInfo])
+
+  // Computed properties
+  const isPremium = tier === "premium"
+  const isTrialActive = tier === "trial"
+  const canAccessPremium = isPremium || isTrialActive
+  const canAccessCore = canAccessPremium || tier === "core"
+  const canSearchCustomVerse = canAccessCore
+
+  // Trial ends at - calculate from customer info
+  const trialEndsAt = useMemo(() => {
+    if (!isTrialActive || !customerInfo) return null
+    const premiumEntitlement = customerInfo.entitlements.active[ENTITLEMENTS.PREMIUM]
+    if (!premiumEntitlement?.expirationDate) return null
+    return new Date(premiumEntitlement.expirationDate).getTime()
+  }, [isTrialActive, customerInfo])
+
+  // Calculate days left in trial
+  const daysLeftInTrial = useMemo(() => {
+    if (!trialEndsAt) return 0
+    const msLeft = trialEndsAt - Date.now()
+    return Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)))
+  }, [trialEndsAt])
+
+  // Initialize RevenueCat and fetch customer info
   useEffect(() => {
-    const savedTier = localStorage.getItem("subscriptionTier")
-    const savedTrialEnd = localStorage.getItem("trialEndsAt")
-    const savedVoiceUsage = localStorage.getItem("voiceUsage")
-
-    if (savedTier) {
-      setTier(savedTier as SubscriptionTier)
-    }
-
-    if (savedTrialEnd) {
-      const endTime = Number.parseInt(savedTrialEnd)
-      setTrialEndsAt(endTime)
-
-      // Check if trial has expired
-      if (endTime < Date.now()) {
-        setTier("free")
-        localStorage.setItem("subscriptionTier", "free")
-        localStorage.removeItem("trialEndsAt")
+    async function initialize() {
+      try {
+        // Configure RevenueCat (will use anonymous ID if no user logged in)
+        configureRevenueCat()
+        
+        // Fetch customer info and offerings in parallel
+        const [info, offers] = await Promise.all([
+          getCustomerInfo(),
+          getOfferings(),
+        ])
+        
+        setCustomerInfo(info)
+        setOfferings(offers)
+      } catch (error) {
+        console.error('Failed to initialize RevenueCat:', error)
+      } finally {
+        setIsLoading(false)
       }
     }
 
+    initialize()
+  }, [])
+
+  // Load voice usage from localStorage on mount
+  useEffect(() => {
+    const savedVoiceUsage = localStorage.getItem("voiceUsage")
     if (savedVoiceUsage) {
-      const parsed = JSON.parse(savedVoiceUsage)
-      // Check if we need to reset the counter
-      const today = new Date().toISOString().split("T")[0]
-      const lastReset = parsed.lastResetDate
-      
-      // Reset weekly for free tier, monthly for others
-      const shouldReset = tier === "free" 
-        ? isNewWeek(lastReset, today)
-        : isNewMonth(lastReset, today)
-      
-      if (shouldReset) {
-        const newUsage = {
-          checkInsUsed: 0,
-          checkInsLimit: getVoiceLimit(tier as SubscriptionTier),
-          lastResetDate: today,
+      try {
+        const parsed = JSON.parse(savedVoiceUsage)
+        const today = new Date().toISOString().split("T")[0]
+        
+        // Reset if it's a new week
+        if (isNewWeek(parsed.lastResetDate, today)) {
+          const newUsage = {
+            checkInsUsed: 0,
+            checkInsLimit: VOICE_LIMITS.free,
+            lastResetDate: today,
+          }
+          setVoiceUsage(newUsage)
+          localStorage.setItem("voiceUsage", JSON.stringify(newUsage))
+        } else {
+          setVoiceUsage(parsed)
         }
-        setVoiceUsage(newUsage)
-        localStorage.setItem("voiceUsage", JSON.stringify(newUsage))
-      } else {
-        setVoiceUsage({
-          ...parsed,
-          checkInsLimit: getVoiceLimit(tier as SubscriptionTier),
-        })
+      } catch {
+        // Invalid JSON, use defaults
       }
     }
   }, [])
@@ -105,23 +191,11 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
     })
   }, [tier])
 
-  const isTrialActive = tier === "trial" && trialEndsAt !== null && trialEndsAt > Date.now()
-  const daysLeftInTrial = trialEndsAt ? Math.ceil((trialEndsAt - Date.now()) / (1000 * 60 * 60 * 24)) : 0
-  
-  // Premium access = premium tier or active trial
-  const canAccessPremium = tier === "premium" || isTrialActive
-  
-  // Core access = core tier, premium tier, or active trial
-  const canAccessCore = tier === "core" || tier === "premium" || isTrialActive
-  
-  const canSearchCustomVerse = canAccessCore
+  // Voice usage
+  const canUseVoice = isPremium || isTrialActive || voiceUsage.checkInsUsed < voiceUsage.checkInsLimit
 
-  // Check if user can use voice
-  const canUseVoice = tier === "premium" || voiceUsage.checkInsUsed < voiceUsage.checkInsLimit
-
-  // Use a voice check-in
-  const useVoiceCheckIn = (): boolean => {
-    if (tier === "premium") return true // Unlimited for premium
+  const useVoiceCheckIn = useCallback((): boolean => {
+    if (isPremium || isTrialActive) return true
     
     if (voiceUsage.checkInsUsed >= voiceUsage.checkInsLimit) {
       return false
@@ -134,44 +208,81 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
     setVoiceUsage(newUsage)
     localStorage.setItem("voiceUsage", JSON.stringify(newUsage))
     return true
-  }
+  }, [isPremium, isTrialActive, voiceUsage])
 
-  const startTrial = () => {
-    const endTime = Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days from now
-    setTier("trial")
-    setTrialEndsAt(endTime)
-    localStorage.setItem("subscriptionTier", "trial")
-    localStorage.setItem("trialEndsAt", endTime.toString())
-  }
+  // Refresh customer info
+  const refreshCustomerInfo = useCallback(async () => {
+    const info = await getCustomerInfo()
+    setCustomerInfo(info)
+  }, [])
 
-  const upgradeToPaid = (plan: "core" | "premium") => {
-    // In a real app, this would integrate with Stripe
-    setTier(plan)
-    localStorage.setItem("subscriptionTier", plan)
-    localStorage.removeItem("trialEndsAt")
-    setTrialEndsAt(null)
-  }
+  // Purchase a package
+  const purchase = useCallback(async (pkg: Package): Promise<boolean> => {
+    try {
+      const result = await purchasePackage(pkg)
+      if (result?.customerInfo) {
+        setCustomerInfo(result.customerInfo)
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('Purchase failed:', error)
+      return false
+    }
+  }, [])
 
-  const downgrade = () => {
-    setTier("free")
-    localStorage.setItem("subscriptionTier", "free")
-    localStorage.removeItem("trialEndsAt")
-    setTrialEndsAt(null)
-  }
+  // Restore purchases
+  const restore = useCallback(async (): Promise<boolean> => {
+    try {
+      const info = await restorePurchases()
+      if (info) {
+        setCustomerInfo(info)
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('Restore failed:', error)
+      return false
+    }
+  }, [])
+
+  // Legacy functions - redirect to subscription page
+  const startTrial = useCallback(() => {
+    // Redirect to subscription page where RevenueCat handles trials
+    window.location.href = '/subscription'
+  }, [])
+
+  const upgradeToPaid = useCallback((plan: "core" | "premium" | "premium-yearly") => {
+    // Redirect to subscription page
+    window.location.href = '/subscription'
+  }, [])
+
+  const downgrade = useCallback(() => {
+    // In RevenueCat, users manage subscriptions through Stripe customer portal
+    // or through the app settings
+    console.log('Downgrade requested - user should manage subscription through settings')
+  }, [])
 
   return (
     <SubscriptionContext.Provider
       value={{
         tier,
-        trialEndsAt,
-        isTrialActive,
-        daysLeftInTrial,
+        isLoading,
+        customerInfo,
+        offerings,
+        isPremium,
         canAccessPremium,
         canAccessCore,
         canSearchCustomVerse,
         voiceUsage,
         canUseVoice,
         useVoiceCheckIn,
+        isTrialActive,
+        daysLeftInTrial,
+        trialEndsAt,
+        purchase,
+        restore,
+        refreshCustomerInfo,
         startTrial,
         upgradeToPaid,
         downgrade,
@@ -188,39 +299,4 @@ export function useSubscription() {
     throw new Error("useSubscription must be used within a SubscriptionProvider")
   }
   return context
-}
-
-// Helper functions
-function getVoiceLimit(tier: SubscriptionTier): number {
-  switch (tier) {
-    case "premium":
-      return Infinity
-    case "core":
-    case "trial":
-      return VOICE_LIMITS.core.monthly
-    case "free":
-    default:
-      return VOICE_LIMITS.free.weekly
-  }
-}
-
-function isNewWeek(lastDate: string, currentDate: string): boolean {
-  const last = new Date(lastDate)
-  const current = new Date(currentDate)
-  
-  // Get the Monday of each week
-  const lastMonday = new Date(last)
-  lastMonday.setDate(last.getDate() - last.getDay() + 1)
-  
-  const currentMonday = new Date(current)
-  currentMonday.setDate(current.getDate() - current.getDay() + 1)
-  
-  return currentMonday > lastMonday
-}
-
-function isNewMonth(lastDate: string, currentDate: string): boolean {
-  const last = new Date(lastDate)
-  const current = new Date(currentDate)
-  
-  return current.getMonth() !== last.getMonth() || current.getFullYear() !== last.getFullYear()
 }

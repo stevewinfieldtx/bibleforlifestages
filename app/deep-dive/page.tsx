@@ -18,7 +18,7 @@ export default function DeepDivePage() {
   const [error, setError] = useState<string>("")
 
   // Get user profile for age
-  const [userProfile, setUserProfile] = useState<{ ageRange?: string; fullName?: string }>({})
+  const [userProfile, setUserProfile] = useState<{ ageRange?: string; stageSituation?: string; contentStyle?: string; fullName?: string }>({})  
   
   useEffect(() => {
     try {
@@ -29,6 +29,14 @@ export default function DeepDivePage() {
     } catch (e) { /* ignore */ }
   }, [])
 
+  // Deep Dive cache key: topic + verse + age + situation + style
+  const getDeepDiveCacheKey = () => {
+    const age = userProfile.ageRange || "adult"
+    const situation = userProfile.stageSituation || "general"
+    const style = userProfile.contentStyle || "casual"
+    return `bible3_deepdive_${topic}_${verseReference}_${age}_${situation}_${style}`.toLowerCase().replace(/[\s:]+/g, "_")
+  }
+
   // Generate the Deep Dive reflection
   useEffect(() => {
     if (!topic || !verseReference || !verseText) {
@@ -38,6 +46,23 @@ export default function DeepDivePage() {
     }
 
     const generateReflection = async () => {
+      // Check cache first
+      const cacheKey = getDeepDiveCacheKey()
+      const cached = localStorage.getItem(cacheKey)
+      if (cached) {
+        try {
+          const data = JSON.parse(cached)
+          if (data.reflection && data.reflection.length > 50) {
+            console.log("[DeepDive] Cache hit:", cacheKey)
+            setReflection(data.reflection)
+            setIsLoading(false)
+            return
+          }
+        } catch (e) {
+          localStorage.removeItem(cacheKey)
+        }
+      }
+
       setIsLoading(true)
       setError("")
       
@@ -57,6 +82,10 @@ export default function DeepDivePage() {
 
         const data = await response.json()
         setReflection(data.reflection)
+        
+        // Save to cache
+        localStorage.setItem(cacheKey, JSON.stringify({ reflection: data.reflection, timestamp: Date.now() }))
+        console.log("[DeepDive] Cached:", cacheKey)
       } catch (err) {
         console.error("Deep Dive error:", err)
         setError("Unable to generate reflection. Please try again.")
@@ -75,17 +104,19 @@ export default function DeepDivePage() {
   const getTopicIcon = (topicName: string): string => {
     const icons: Record<string, string> = {
       "Fighting Cancer": "healing",
-      "Supporting Someone with Cancer": "volunteer_activism",
-      "Autism in the Family": "family_restroom",
-      "Grieving a Loss": "heart_broken",
+      "Supporting Someone Sick": "volunteer_activism",
+      "Supporting Someone with Autism": "neurology",
+      "Special Needs Family": "family_restroom",
+      "Grieving a Death": "sentiment_very_dissatisfied",
       "Going Through Divorce": "link_off",
       "Financial Crisis": "money_off",
       "Loneliness & Isolation": "person_off",
       "Caring for Aging Parents": "elderly",
       "Addiction Struggle": "psychology_alt",
-      "Crisis of Faith": "help",
+      "Doubting My Faith": "help",
       "Chronic Illness": "medical_services",
-      "Mental Health": "neurology",
+      "Depression": "cloud",
+      "Anxiety & Worry": "psychology",
     }
     return icons[topicName] || "explore"
   }

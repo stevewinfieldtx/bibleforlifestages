@@ -11,7 +11,6 @@ async function fetchYouVersionVOTD(): Promise<{ reference: string; text: string;
     if (response.ok) {
       const html = await response.text()
 
-      // Pattern: alt="Isaiah 7:14 - Therefore the Lord himself will give you..."
       const altMatch = html.match(/alt="([^"]+\d+:\d+)\s*-\s*([^"]+)"/i)
       if (altMatch) {
         return {
@@ -40,137 +39,115 @@ async function fetchYouVersionVOTD(): Promise<{ reference: string; text: string;
   return null
 }
 
-async function fetchBibleGatewayVOTD(): Promise<{ reference: string; text: string; version: string } | null> {
-  try {
-    const jsonResponse = await fetch("https://www.biblegateway.com/votd/get/?format=json&version=NIV", {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
-    })
-    if (jsonResponse.ok) {
-      const data = await jsonResponse.json()
-      if (data.votd && data.votd.text) {
-        const cleanText = data.votd.text
-          .replace(/<[^>]*>/g, "")
-          .replace(/&nbsp;/g, " ")
-          .replace(/&#\d+;/g, "")
-          .replace(/&\w+;/g, "")
-          .trim()
-        return {
-          reference: data.votd.reference || data.votd.display_ref,
-          text: cleanText,
-          version: "NIV",
-        }
-      }
-    }
-
-    const htmlResponse = await fetch("https://www.biblegateway.com/reading-plans/verse-of-the-day/today?version=NIV", {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
-    })
-    if (htmlResponse.ok) {
-      const html = await htmlResponse.text()
-      const refMatch = html.match(/rp-passage[^>]*>.*?([A-Za-z]+\s+\d+:\d+)/is)
-      const textMatch = html.match(/<sup[^>]*>\d+<\/sup>([^<]+)/i)
-      if (refMatch) {
-        return {
-          reference: refMatch[1].trim(),
-          text: textMatch ? textMatch[1].trim() : "",
-          version: "NIV",
-        }
-      }
-    }
-  } catch (e) {
-    console.error("Bible Gateway fetch error:", e)
-  }
-  return null
+// 35 Theme verse pools - one key verse per theme
+// Structure: Each theme gets a single powerful verse that embodies the concept
+const THEME_VERSES: Record<string, string> = {
+  // MONDAY - Mission Mode (The Launch)
+  "Diligence": "Colossians 3:23-24",      // Work as for the Lord
+  "Focus": "Philippians 3:13-14",         // Forgetting what's behind, pressing on
+  "Integrity": "Proverbs 11:3",           // Integrity guides the upright
+  "Wisdom": "James 1:5",                  // If any lacks wisdom, ask God
+  "Obedience": "James 1:22",              // Be doers of the word
+  
+  // TUESDAY - Endurance Mode (The Grind)
+  "Strength": "Isaiah 40:31",             // Renew their strength
+  "Patience": "James 1:2-4",              // Testing produces perseverance
+  "Perseverance": "Galatians 6:9",        // Don't grow weary doing good
+  "Trust": "Proverbs 3:5-6",              // Trust with all your heart
+  "Hope": "Romans 15:13",                 // God of hope fill you
+  
+  // WEDNESDAY - Battle Mode (The Hump)
+  "Courage": "Joshua 1:9",                // Be strong and courageous
+  "Boldness": "Acts 4:29-31",             // Speak your word with boldness
+  "Identity": "Ephesians 2:10",           // We are God's handiwork
+  "Discernment": "Hebrews 5:14",          // Trained to distinguish good from evil
+  "Accountability": "Proverbs 27:17",     // Iron sharpens iron
+  
+  // THURSDAY - Community Mode (The People)
+  "Compassion": "Colossians 3:12",        // Clothe yourselves with compassion
+  "Service": "Galatians 5:13",            // Serve one another in love
+  "Kindness": "Ephesians 4:32",           // Be kind to one another
+  "Generosity": "2 Corinthians 9:7",      // God loves a cheerful giver
+  "Unity": "Ephesians 4:2-3",             // Keep the unity of the Spirit
+  
+  // FRIDAY - Guardrails Mode (The Temptation)
+  "Joy": "Nehemiah 8:10",                 // Joy of the Lord is strength
+  "Self-Control": "Galatians 5:22-23",    // Fruit of the Spirit
+  "Contentment": "Philippians 4:11-12",   // Learned to be content
+  "Gratitude": "1 Thessalonians 5:18",    // Give thanks in all circumstances
+  "Purity": "Psalm 51:10",                // Create in me a pure heart
+  
+  // SATURDAY - Recovery Mode (The Reset)
+  "Rest": "Matthew 11:28-30",             // Come to me, I will give rest
+  "Peace": "Philippians 4:6-7",           // Peace that transcends understanding
+  "Humility": "Philippians 2:3-4",        // Value others above yourself
+  "Forgiveness": "Colossians 3:13",       // Forgive as the Lord forgave
+  "Silence": "Psalm 46:10",               // Be still and know
+  
+  // SUNDAY - Foundation Mode (The Core)
+  "Faith": "Hebrews 11:1",                // Confidence in what we hope for
+  "Love": "1 Corinthians 13:4-7",         // Love is patient, love is kind
+  "Grace": "Ephesians 2:8-9",             // By grace you have been saved
+  "Repentance": "2 Chronicles 7:14",      // If my people humble themselves
+  "Worship": "Psalm 95:6-7",              // Come let us worship and bow down
 }
 
-async function fetchOliveTreeVOTD(): Promise<{ reference: string; text: string; version: string } | null> {
+// Get verse text for a reference using LLM
+async function getVerseText(reference: string): Promise<{ reference: string; text: string; version: string } | null> {
   try {
-    const response = await fetch("https://www.olivetree.com/votd/", {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
+    const openrouter = createOpenRouter({
+      apiKey: process.env.OPENROUTER_API_KEY!,
     })
-    if (response.ok) {
-      const html = await response.text()
 
-      // The page structure has: "Verse of the Day" then "Deuteronomy 18:15" then the verse text
-      // Pattern: Look for book name followed by chapter:verse, then the text follows
-      const refMatch = html.match(/Verse of the Day\s*<\/[^>]+>\s*<[^>]+>([A-Za-z0-9\s]+\d+:\d+(?:-\d+)?)/is)
+    const modelId = "google/gemini-2.0-flash-lite-001"
 
-      if (refMatch) {
-        const reference = refMatch[1].trim()
+    const { text } = await generateText({
+      model: openrouter(modelId),
+      system: "Return only the NIV Bible verse text. No commentary, no introduction, just the verse.",
+      prompt: `What is the NIV text of ${reference}? Return ONLY the verse text, nothing else.`,
+      maxTokens: 300,
+    })
 
-        // Get the verse text - it follows the reference
-        // Pattern: reference followed by closing tag, then text content
-        const textPattern = new RegExp(reference.replace(/[-:]/g, "[-:]") + "<\\/[^>]+>\\s*<[^>]+>([^<]+)", "is")
-        const textMatch = html.match(textPattern)
-
-        if (textMatch) {
-          return {
-            reference,
-            text: textMatch[1].trim(),
-            version: "NIV",
-          }
-        }
-
-        // Fallback: try to find any paragraph-like text after the reference
-        const fallbackPattern = new RegExp(
-          reference.replace(/[-:]/g, "[-:]") + "[^>]*>[\\s\\S]*?<[^>]+>([^<]{20,})<",
-          "is",
-        )
-        const fallbackMatch = html.match(fallbackPattern)
-
-        if (fallbackMatch) {
-          return {
-            reference,
-            text: fallbackMatch[1].trim(),
-            version: "NIV",
-          }
-        }
-      }
-
-      // Alternative pattern: look for any Bible reference format in the page
-      const simpleRefMatch = html.match(
-        />((?:Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|1 Samuel|2 Samuel|1 Kings|2 Kings|1 Chronicles|2 Chronicles|Ezra|Nehemiah|Esther|Job|Psalms?|Proverbs|Ecclesiastes|Song of Solomon|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|1 Corinthians|2 Corinthians|Galatians|Ephesians|Philippians|Colossians|1 Thessalonians|2 Thessalonians|1 Timothy|2 Timothy|Titus|Philemon|Hebrews|James|1 Peter|2 Peter|1 John|2 John|3 John|Jude|Revelation)\s+\d+:\d+(?:-\d+)?)</i,
-      )
-
-      if (simpleRefMatch) {
-        const reference = simpleRefMatch[1].trim()
-        // Find text that follows - usually the next significant text block
-        const afterRef = html.split(reference)[1]
-        if (afterRef) {
-          const textMatch = afterRef.match(/>([A-Z][^<]{30,})</i)
-          if (textMatch) {
-            return {
-              reference,
-              text: textMatch[1].trim(),
-              version: "NIV",
-            }
-          }
-        }
-      }
+    return {
+      reference,
+      text: text.trim().replace(/^["']|["']$/g, ''), // Remove quotes if present
+      version: "NIV",
     }
   } catch (e) {
-    console.error("Olive Tree fetch error:", e)
+    console.error("Verse text fetch error:", e)
+    return null
   }
-  return null
+}
+
+// Theme-based verse selection
+async function selectVerseForTheme(theme: string): Promise<{ reference: string; text: string; version: string } | null> {
+  try {
+    const verseRef = THEME_VERSES[theme]
+    if (!verseRef) {
+      console.error("Unknown theme:", theme)
+      return null
+    }
+
+    console.log(`[v0] Theme: ${theme} -> ${verseRef}`)
+    return await getVerseText(verseRef)
+  } catch (e) {
+    console.error("Theme verse selection error:", e)
+    return null
+  }
 }
 
 export async function POST(request: Request) {
   try {
     const { source, verseQuery } = await request.json()
 
+    // Handle specific verse query
     if (verseQuery) {
       console.log("[v0] generate-verse API - verseQuery requested:", verseQuery)
       const openrouter = createOpenRouter({
         apiKey: process.env.OPENROUTER_API_KEY!,
       })
 
-      const modelId = (process.env.OPENROUTER_MODEL_ID || "anthropic/claude-sonnet-4-20250514").trim()
+      const modelId = "google/gemini-2.0-flash-lite-001"
 
       const { text } = await generateText({
         model: openrouter(modelId),
@@ -193,12 +170,15 @@ export async function POST(request: Request) {
 
     let verse = null
 
-    if (source === "YouVersion") {
+    // Handle theme-based selection (format: "Theme:ThemeName")
+    if (source?.startsWith("Theme:")) {
+      const theme = source.split(":")[1]
+      console.log("[v0] generate-verse API - Theme requested:", theme)
+      verse = await selectVerseForTheme(theme)
+    }
+    // Handle YouVersion
+    else if (source === "YouVersion") {
       verse = await fetchYouVersionVOTD()
-    } else if (source === "Gateway") {
-      verse = await fetchBibleGatewayVOTD()
-    } else if (source === "Olive Tree") {
-      verse = await fetchOliveTreeVOTD()
     }
 
     if (!verse) {

@@ -23,8 +23,11 @@ export async function POST(req: Request) {
 
     const isTeen = ageRange?.toLowerCase() === "teen" || ageRange?.toLowerCase() === "teens"
     const finalPrompt = isTeen
-      ? `${prompt}, modern anime style, vibrant colors, expressive characters, clean linework, contemporary anime aesthetic`
-      : prompt
+      ? `${prompt}, modern anime style, vibrant colors, expressive characters, clean linework, contemporary anime aesthetic, no text, no words, no letters, no writing, no captions`
+      : `${prompt}, no text, no words, no letters, no writing, no captions`
+
+    // Negative prompt to prevent text/words from appearing
+    const negativePrompt = "text, words, letters, writing, captions, labels, watermark, signature, typography, font, alphabet, numbers, digits, symbols, logos, banners, signs, subtitles"
 
     console.log("[v0] Final prompt (anime):", isTeen ? "YES" : "NO")
 
@@ -46,6 +49,7 @@ export async function POST(req: Request) {
       const images = await runware.requestImages({
         model: modelId,
         positivePrompt: finalPrompt,
+        negativePrompt: negativePrompt,
         width: width,
         height: height,
         numberResults: 1,

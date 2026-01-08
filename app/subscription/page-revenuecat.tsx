@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation"
 import { useSubscription } from "@/context/subscription-context"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { useState } from "react"
+import { useRef, useState } from "react"
 
 export default function SubscriptionPage() {
   const router = useRouter()
@@ -23,6 +23,7 @@ export default function SubscriptionPage() {
   const [isPurchasing, setIsPurchasing] = useState(false)
   const [isRestoring, setIsRestoring] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const purchaseContainerRef = useRef<HTMLDivElement>(null)
 
   const freeFeatures = [
     "Daily verse with friendly description",
@@ -44,17 +45,15 @@ export default function SubscriptionPage() {
     "AI that truly knows you",
   ]
 
-  const currentTierLabel: Record<string, string> = {
+  const currentTierLabel = {
     free: "Free Account",
     trial: "Trial Active",
-    core: "Core Member",
     premium: "Premium Member",
   }
 
-  const currentTierColor: Record<string, string> = {
+  const currentTierColor = {
     free: "bg-gray-100 text-gray-700",
     trial: "bg-gradient-to-r from-amber-100 to-amber-200 text-amber-900",
-    core: "bg-gradient-to-r from-indigo-100 to-violet-200 text-indigo-900",
     premium: "bg-gradient-to-r from-green-100 to-emerald-200 text-green-900",
   }
 
@@ -130,12 +129,12 @@ export default function SubscriptionPage() {
       <main className="flex-1 px-6 py-8">
         {/* Current Status */}
         <div className="mb-8 text-center">
-          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full mb-4 ${currentTierColor[tier] || currentTierColor.free}`}>
+          <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full mb-4 ${currentTierColor[tier]}`}>
             <span className="material-symbols-outlined text-current">
               {tier === "free" ? "person" : tier === "trial" ? "verified" : "workspace_premium"}
             </span>
             <span className="text-sm font-semibold">
-              {currentTierLabel[tier] || "Free Account"}
+              {currentTierLabel[tier]}
               {isTrialActive && `: ${daysLeftInTrial} ${daysLeftInTrial === 1 ? "day" : "days"} left`}
             </span>
           </div>
@@ -143,7 +142,7 @@ export default function SubscriptionPage() {
           {/* Voice Usage */}
           {tier === "free" && (
             <div className="text-sm text-muted-foreground">
-              Voice check-ins: {voiceUsage.checkInsUsed} / {voiceUsage.checkInsLimit === 999 ? "∞" : voiceUsage.checkInsLimit}
+              Voice check-ins: {voiceUsage.checkInsUsed} / {voiceUsage.checkInsLimit === Infinity ? "∞" : voiceUsage.checkInsLimit}
               <span className="text-xs ml-1">(per week)</span>
             </div>
           )}
@@ -186,7 +185,10 @@ export default function SubscriptionPage() {
                 <h3 className="text-lg font-bold text-primary">Premium</h3>
                 <div className="flex items-baseline gap-2">
                   <p className="text-2xl font-bold text-primary">
-                    $5<span className="text-sm font-normal text-muted-foreground">/month</span>
+                    ${monthlyPackage?.webBillingProduct?.normalPeriodDuration === "P1M" 
+                      ? (monthlyPackage.webBillingProduct.currentPrice.amountMicros / 1000000).toFixed(0) 
+                      : "5"}
+                    <span className="text-sm font-normal text-muted-foreground">/month</span>
                   </p>
                 </div>
               </div>
@@ -226,6 +228,9 @@ export default function SubscriptionPage() {
               </div>
             )}
           </Card>
+
+          {/* RevenueCat purchase container - for embedded checkout */}
+          <div ref={purchaseContainerRef} id="revenuecat-purchase-container" />
         </div>
 
         {/* Restore Purchases */}

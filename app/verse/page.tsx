@@ -7,20 +7,52 @@ import { useSubscription } from "@/context/subscription-context"
 import { HeaderDropdown } from "@/components/header-dropdown"
 import { UpgradePrompt } from "@/components/upgrade-prompt"
 
-// Deep Dive topics available to users
+// Deep Dive topics available to users - organized by category
 const DEEP_DIVE_TOPICS = [
-  { id: "cancer-fighting", label: "Fighting Cancer", icon: "healing", desc: "For those in treatment" },
-  { id: "cancer-support", label: "Supporting Someone with Cancer", icon: "volunteer_activism", desc: "For caregivers & loved ones" },
-  { id: "autism-family", label: "Autism in the Family", icon: "family_restroom", desc: "For families with autistic members" },
-  { id: "grief", label: "Grieving a Loss", icon: "heart_broken", desc: "Processing death or major loss" },
-  { id: "divorce", label: "Going Through Divorce", icon: "link_off", desc: "Navigating separation" },
-  { id: "financial-crisis", label: "Financial Crisis", icon: "money_off", desc: "Struggling with money" },
-  { id: "loneliness", label: "Loneliness & Isolation", icon: "person_off", desc: "Feeling disconnected" },
-  { id: "aging-parents", label: "Caring for Aging Parents", icon: "elderly", desc: "Caregiver support" },
-  { id: "addiction", label: "Addiction Struggle", icon: "psychology_alt", desc: "Self or loved one" },
-  { id: "faith-doubt", label: "Crisis of Faith", icon: "help", desc: "Wrestling with doubt" },
-  { id: "chronic-illness", label: "Chronic Illness", icon: "medical_services", desc: "Living with ongoing health issues" },
-  { id: "mental-health", label: "Mental Health", icon: "neurology", desc: "Anxiety, depression, & more" },
+  // Life Celebrations
+  { id: "new-baby", label: "New Baby at Home", icon: "child_care", desc: "Adjusting to parenthood", category: "celebration" },
+  { id: "newly-married", label: "Newly Married", icon: "favorite", desc: "Building a life together", category: "celebration" },
+  { id: "new-job", label: "Starting a New Job", icon: "work", desc: "New career chapter", category: "celebration" },
+  { id: "retirement", label: "Entering Retirement", icon: "beach_access", desc: "New season of life", category: "celebration" },
+  
+  // Family & Relationships
+  { id: "marriage-struggles", label: "Marriage Struggles", icon: "heart_broken", desc: "When marriage is hard", category: "family" },
+  { id: "divorce", label: "Going Through Divorce", icon: "link_off", desc: "Navigating separation", category: "family" },
+  { id: "single-parenting", label: "Single Parenting", icon: "escalator_warning", desc: "Raising kids alone", category: "family" },
+  { id: "prodigal-child", label: "Wayward Child", icon: "directions_walk", desc: "When kids walk away", category: "family" },
+  { id: "infertility", label: "Infertility Journey", icon: "nest_cam_wired_stand", desc: "Longing for a child", category: "family" },
+  { id: "blended-family", label: "Blended Family", icon: "groups", desc: "Stepparenting & merging", category: "family" },
+  { id: "autism-support", label: "Supporting Someone with Autism", icon: "neurology", desc: "Understanding & supporting", category: "family" },
+  { id: "special-needs", label: "Special Needs Family", icon: "family_restroom", desc: "Disabilities & challenges", category: "family" },
+  { id: "aging-parents", label: "Caring for Aging Parents", icon: "elderly", desc: "Caregiver support", category: "family" },
+  { id: "empty-nest", label: "Empty Nest", icon: "home", desc: "Kids have left", category: "family" },
+  
+  // Health & Loss
+  { id: "cancer-fighting", label: "Fighting Cancer", icon: "healing", desc: "For those in treatment", category: "health" },
+  { id: "cancer-support", label: "Supporting Someone Sick", icon: "volunteer_activism", desc: "Caregivers & loved ones", category: "health" },
+  { id: "chronic-illness", label: "Chronic Illness", icon: "medical_services", desc: "Living with ongoing issues", category: "health" },
+  { id: "grief", label: "Grieving a Death", icon: "sentiment_very_dissatisfied", desc: "Loss of a loved one", category: "health" },
+  { id: "miscarriage", label: "Miscarriage or Loss of Child", icon: "child_friendly", desc: "Grieving a baby", category: "health" },
+  
+  // Mental & Emotional
+  { id: "depression", label: "Depression", icon: "cloud", desc: "When darkness lingers", category: "mental" },
+  { id: "anxiety", label: "Anxiety & Worry", icon: "psychology", desc: "Overwhelmed by fear", category: "mental" },
+  { id: "loneliness", label: "Loneliness & Isolation", icon: "person_off", desc: "Feeling disconnected", category: "mental" },
+  { id: "burnout", label: "Burnout & Exhaustion", icon: "battery_0_bar", desc: "Running on empty", category: "mental" },
+  { id: "addiction", label: "Addiction Struggle", icon: "psychology_alt", desc: "Self or loved one", category: "mental" },
+  
+  // Work & Finances
+  { id: "job-loss", label: "Job Loss", icon: "work_off", desc: "Unemployment & uncertainty", category: "work" },
+  { id: "financial-crisis", label: "Financial Crisis", icon: "money_off", desc: "Struggling with money", category: "work" },
+  { id: "work-stress", label: "Toxic Work Environment", icon: "business", desc: "Difficult workplace", category: "work" },
+  { id: "career-change", label: "Career Uncertainty", icon: "explore", desc: "What should I do?", category: "work" },
+  
+  // Faith & Purpose
+  { id: "faith-doubt", label: "Doubting My Faith", icon: "help", desc: "Wrestling with belief", category: "faith" },
+  { id: "feeling-far-from-god", label: "Feeling Far from God", icon: "cloud_off", desc: "Spiritual dryness", category: "faith" },
+  { id: "unanswered-prayer", label: "Unanswered Prayer", icon: "hourglass_empty", desc: "When God seems silent", category: "faith" },
+  { id: "purpose", label: "Finding My Purpose", icon: "lightbulb", desc: "Why am I here?", category: "faith" },
+  { id: "forgiving-someone", label: "Struggling to Forgive", icon: "handshake", desc: "Letting go of hurt", category: "faith" },
 ]
 
 export default function VerseInterpretationPage() {
@@ -54,24 +86,32 @@ export default function VerseInterpretationPage() {
     return () => clearTimeout(timer)
   }, [])
 
-  // Only redirect if we've waited AND there's no verse AND we're not loading
+  // Extract theme name from source if it's a theme-based devotional
+  const isThemeBased = devotional.source?.startsWith("Theme:")
+  const themeName = isThemeBased ? devotional.source?.split(":")[1] : null
+
+  // Only redirect if we've waited AND there's no content AND we're not loading
   useEffect(() => {
-    if (hasWaited && !devotional.verse?.reference && !isLoading) {
+    const hasContent = devotional.verse?.reference || devotional.interpretation
+    if (hasWaited && !hasContent && !isLoading) {
       router.push("/")
     }
-  }, [hasWaited, devotional.verse?.reference, isLoading, router])
+  }, [hasWaited, devotional.verse?.reference, devotional.interpretation, isLoading, router])
 
-  // Show loading state while waiting for verse
-  if (!devotional.verse) {
+  // Show loading state while waiting for content
+  if (!devotional.verse && !devotional.interpretation) {
     return (
       <div className="flex min-h-screen w-full flex-col items-center justify-center max-w-md mx-auto bg-gradient-to-b from-orange-50 via-background to-background shadow-2xl">
         <div className="size-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-muted-foreground">Loading scripture...</p>
+        <p className="text-muted-foreground">{isThemeBased ? "Generating teaching..." : "Loading scripture..."}</p>
       </div>
     )
   }
 
-  const verseText = devotional.verse.text?.startsWith('"') ? devotional.verse.text : `"${devotional.verse.text}"`
+  // For theme-based devotionals, we don't have a verse to display
+  const verseText = devotional.verse?.text 
+    ? (devotional.verse.text.startsWith('"') ? devotional.verse.text : `"${devotional.verse.text}"`)
+    : null
 
   const interpretationParagraphs = devotional.interpretation
     ? devotional.interpretation.split(/\n\n+/).filter((p) => p.trim().length > 0)
@@ -209,20 +249,126 @@ export default function VerseInterpretationPage() {
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  {DEEP_DIVE_TOPICS.map((topic) => (
-                    <button
-                      key={topic.id}
-                      onClick={() => handleDeepDiveSelect(topic.id)}
-                      className="flex flex-col items-start p-3 rounded-xl border border-border bg-card hover:border-purple-300 hover:bg-purple-50 transition-all text-left"
-                    >
-                      <div className="size-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 text-white flex items-center justify-center mb-2">
-                        <span className="material-symbols-outlined text-sm">{topic.icon}</span>
-                      </div>
-                      <span className="font-semibold text-sm leading-tight">{topic.label}</span>
-                      <span className="text-xs text-muted-foreground mt-0.5">{topic.desc}</span>
-                    </button>
-                  ))}
+                <div className="space-y-4">
+                  {/* Life Celebrations */}
+                  <div>
+                    <h4 className="text-xs font-bold text-emerald-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm">celebration</span>
+                      New Beginnings
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {DEEP_DIVE_TOPICS.filter(t => t.category === "celebration").map((topic) => (
+                        <button
+                          key={topic.id}
+                          onClick={() => handleDeepDiveSelect(topic.id)}
+                          className="flex items-center gap-2 p-2 rounded-lg border border-border bg-card hover:border-emerald-300 hover:bg-emerald-50 transition-all text-left"
+                        >
+                          <span className="material-symbols-outlined text-emerald-600 text-lg">{topic.icon}</span>
+                          <span className="text-xs font-medium leading-tight">{topic.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Family & Relationships */}
+                  <div>
+                    <h4 className="text-xs font-bold text-rose-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm">family_restroom</span>
+                      Family & Relationships
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {DEEP_DIVE_TOPICS.filter(t => t.category === "family").map((topic) => (
+                        <button
+                          key={topic.id}
+                          onClick={() => handleDeepDiveSelect(topic.id)}
+                          className="flex items-center gap-2 p-2 rounded-lg border border-border bg-card hover:border-rose-300 hover:bg-rose-50 transition-all text-left"
+                        >
+                          <span className="material-symbols-outlined text-rose-600 text-lg">{topic.icon}</span>
+                          <span className="text-xs font-medium leading-tight">{topic.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Health & Loss */}
+                  <div>
+                    <h4 className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm">healing</span>
+                      Health & Loss
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {DEEP_DIVE_TOPICS.filter(t => t.category === "health").map((topic) => (
+                        <button
+                          key={topic.id}
+                          onClick={() => handleDeepDiveSelect(topic.id)}
+                          className="flex items-center gap-2 p-2 rounded-lg border border-border bg-card hover:border-blue-300 hover:bg-blue-50 transition-all text-left"
+                        >
+                          <span className="material-symbols-outlined text-blue-600 text-lg">{topic.icon}</span>
+                          <span className="text-xs font-medium leading-tight">{topic.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Mental & Emotional */}
+                  <div>
+                    <h4 className="text-xs font-bold text-purple-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm">psychology</span>
+                      Mental & Emotional
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {DEEP_DIVE_TOPICS.filter(t => t.category === "mental").map((topic) => (
+                        <button
+                          key={topic.id}
+                          onClick={() => handleDeepDiveSelect(topic.id)}
+                          className="flex items-center gap-2 p-2 rounded-lg border border-border bg-card hover:border-purple-300 hover:bg-purple-50 transition-all text-left"
+                        >
+                          <span className="material-symbols-outlined text-purple-600 text-lg">{topic.icon}</span>
+                          <span className="text-xs font-medium leading-tight">{topic.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Work & Finances */}
+                  <div>
+                    <h4 className="text-xs font-bold text-amber-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm">work</span>
+                      Work & Finances
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {DEEP_DIVE_TOPICS.filter(t => t.category === "work").map((topic) => (
+                        <button
+                          key={topic.id}
+                          onClick={() => handleDeepDiveSelect(topic.id)}
+                          className="flex items-center gap-2 p-2 rounded-lg border border-border bg-card hover:border-amber-300 hover:bg-amber-50 transition-all text-left"
+                        >
+                          <span className="material-symbols-outlined text-amber-600 text-lg">{topic.icon}</span>
+                          <span className="text-xs font-medium leading-tight">{topic.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Faith & Purpose */}
+                  <div>
+                    <h4 className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm">church</span>
+                      Faith & Purpose
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      {DEEP_DIVE_TOPICS.filter(t => t.category === "faith").map((topic) => (
+                        <button
+                          key={topic.id}
+                          onClick={() => handleDeepDiveSelect(topic.id)}
+                          className="flex items-center gap-2 p-2 rounded-lg border border-border bg-card hover:border-indigo-300 hover:bg-indigo-50 transition-all text-left"
+                        >
+                          <span className="material-symbols-outlined text-indigo-600 text-lg">{topic.icon}</span>
+                          <span className="text-xs font-medium leading-tight">{topic.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -243,13 +389,13 @@ export default function VerseInterpretationPage() {
             showHeaderTitle ? "opacity-100" : "opacity-0"
           }`}
         >
-          {devotional.verse.reference}
+          {isThemeBased ? themeName : devotional.verse?.reference}
         </h2>
         <div className="flex items-center gap-1">
           <button className="flex size-10 items-center justify-center rounded-full hover:bg-muted transition-colors">
             <span className="material-symbols-outlined">bookmark_border</span>
           </button>
-          <HeaderDropdown verseReference={devotional.verse.reference} />
+          {devotional.verse?.reference && <HeaderDropdown verseReference={devotional.verse.reference} />}
         </div>
       </div>
 
@@ -265,27 +411,44 @@ export default function VerseInterpretationPage() {
           </div>
         </div>
 
-        {/* Verse Section */}
+        {/* Theme or Verse Section */}
         <div className="px-6 mb-8 text-center">
-          <p className="text-primary font-bold text-sm tracking-widest uppercase mb-3">Verse of the Day</p>
-          <h1 className="font-serif text-2xl md:text-3xl font-light leading-snug mb-4">{verseText}</h1>
-          <div className="flex items-center justify-center gap-2">
-            <div className="h-px w-8 bg-border"></div>
-            <p className="text-muted-foreground text-sm font-semibold tracking-wide">
-              {devotional.verse.reference} ({devotional.verse.version})
-            </p>
-            <div className="h-px w-8 bg-border"></div>
-          </div>
+          {isThemeBased ? (
+            // THEME-BASED: Show theme name as main heading
+            <>
+              <p className="text-primary font-bold text-sm tracking-widest uppercase mb-3">
+                Today&apos;s Theme
+              </p>
+              <h1 className="font-serif text-3xl md:text-4xl font-bold leading-snug text-foreground">
+                {themeName}
+              </h1>
+            </>
+          ) : (
+            // VERSE-BASED: Show verse text with reference
+            <>
+              <p className="text-primary font-bold text-sm tracking-widest uppercase mb-3">
+                Verse of the Day
+              </p>
+              <h1 className="font-serif text-2xl md:text-3xl font-light leading-snug mb-4">{verseText}</h1>
+              <div className="flex items-center justify-center gap-2">
+                <div className="h-px w-8 bg-border"></div>
+                <p className="text-muted-foreground text-sm font-semibold tracking-wide">
+                  {devotional.verse?.reference} ({devotional.verse?.version})
+                </p>
+                <div className="h-px w-8 bg-border"></div>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Friendly Breakdown Section */}
+        {/* Teaching/Breakdown Section */}
         <div className="px-5 mb-8">
           <div className="bg-card rounded-2xl p-6 shadow-lg border border-primary/20">
             <div className="flex items-center gap-3 mb-4">
               <div className="size-10 rounded-full bg-gradient-to-br from-primary to-orange-400 flex items-center justify-center text-white">
-                <span className="material-symbols-outlined text-lg">auto_awesome</span>
+                <span className="material-symbols-outlined text-lg">{isThemeBased ? "menu_book" : "auto_awesome"}</span>
               </div>
-              <h2 className="text-lg font-bold">Friendly Breakdown</h2>
+              <h2 className="text-lg font-bold">{isThemeBased ? "What the Bible Says" : "Friendly Breakdown"}</h2>
             </div>
 
             {isInterpretationLoading || interpretationParagraphs.length === 0 ? (
@@ -340,7 +503,8 @@ export default function VerseInterpretationPage() {
           </div>
         </div>
 
-        {/* Deepen Your Faith Section */}
+        {/* Deepen Your Faith Section - Only for verse-based devotionals */}
+        {!isThemeBased && (
         <div className="px-5 pb-8">
           <h3 className="text-lg font-bold mb-4 px-1">Dive Deeper</h3>
 
@@ -396,6 +560,7 @@ export default function VerseInterpretationPage() {
             <span className="material-symbols-outlined text-indigo-500">arrow_forward</span>
           </button>
         </div>
+        )}
       </main>
     </div>
   )
